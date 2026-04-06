@@ -19,14 +19,14 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 ┌─────────────────────────────────────────┐
 │              MAESTRO (LLM)             │
 │  Clasifica tarea → selecciona pipeline │
-└──────┬──────────┬────────────┬─────────┘
+└──────┴──────────卌──────────┴─────────┘
        │          │            │
- ┌─────▼──┐  ┌────▼──┐   ┌─────▼──────┐
+ ┌─────▼──┐  ┌────▼──┐   ┌─────▼─────┐
  │  DEV   │  │RESEARCH│  │  CONTENT   │  ... (OFFICE/QA/TRADING/PM)
- └─────┬──┘  └────┬───┘   └─────┬──────┘
-       └──────────┴─────────────┘
+ └─────┬──┘  └────┬───┘   └─────┬─────┘
+       └─────────┴───────────┘
                   │
-       ┌──────────▼──────────┐
+       ┌──────────▼───────────┐
        │   Memoria & Estado  │
        │  (SQLite + Supabase)│
        └─────────────────────┘
@@ -36,6 +36,55 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 - `core/pipeline_router.py` ejecuta los agentes en secuencia o en modo paralelo+secuencial.
 - `infrastructure/memory_manager.py` guarda sesiones en SQLite y las sincroniza a Supabase.
 - `infrastructure/security_sandbox.py` protege filesystem, comandos y redes según reglas de `config.yaml`.
+
+---
+
+## 🌐 Modos de operación
+
+CLAW soporta dos modos según tu conectividad y preferencias de privacidad:
+
+### Modo Cloud-First (por defecto)
+
+Usa servicios externos para máxima capacidad. Requiere conexión a internet y claves API.
+
+| Componente | Servicio | Costo |
+|------------|----------|-------|
+| LLM principal | Groq (llama-3.3-70b) | Gratis (con límites) |
+| LLM fallback | Gemini 2.0 Flash | Gratis (con límites) |
+| Memoria cloud | Supabase | Gratis (tier free) |
+| Búsqueda web | DuckDuckGo | Gratis, sin API key |
+| Datos crypto | CoinGecko + DeFiLlama | Gratis, sin API key |
+
+**Configuración mínima en `.env`:**
+```env
+GROQ_API_KEY=tu_clave_groq   # Obligatorio
+GEMINI_API_KEY=tu_clave      # Opcional (fallback)
+SUPABASE_URL=...             # Opcional (memoria cloud)
+SUPABASE_KEY=...             # Opcional (memoria cloud)
+```
+
+### Modo Offline (Ollama + ChromaDB)
+
+Usa modelos locales. No requiere internet ni claves API. Ideal para privacidad total o entornos sin conexión.
+
+**Prerrequisitos:**
+1. Instalar [Ollama](https://ollama.ai): `ollama pull llama3.1:8b`
+2. Las dependencias `sentence-transformers`, `chromadb` y `ollama` ya están en `requirements.txt`
+
+**Configuración en `.env`:**
+```env
+HYPERSPACE_ENABLED=true
+HYPERSPACE_BASE_URL=http://localhost:11434/v1   # Ollama compatible con OpenAI API
+GROQ_API_KEY=                                   # Dejar vacío para forzar fallback local
+```
+
+**Limitaciones del modo offline:**
+- Calidad de respuesta inferior a los modelos cloud de 70B.
+- La memoria funciona solo con SQLite local (sin sync a Supabase).
+- El pipeline RESEARCH usa DuckDuckGo (requiere red); sin red, solo usa datos de contexto.
+- Los pipelines TRADING y RESEARCH con datos crypto requieren acceso a CoinGecko/DeFiLlama.
+
+> **Nota:** El modo offline está funcional pero es un modo secundario. Para uso intensivo de producción, el modo cloud-first ofrece mayor calidad y velocidad.
 
 ---
 
@@ -80,7 +129,7 @@ orquestador-multiagente/
 │   ├── web_search.py        # Búsqueda web por DuckDuckGo
 │   ├── file_ops.py          # Utilidades de archivos
 │   ├── office_reader.py     # Lectura de Office/PDF
-│   ├── code_executor.py     # Ejecución controlada de código
+│   ├── code_executor.py     # Ejecución controlada (shell=False)
 │   ├── crypto_data.py       # Datos de mercado crypto (CoinGecko/DeFiLlama)
 │   ├── safe_filesystem.py   # Acceso a disco seguro
 │   └── git_ops.py           # Integración GitHub (PyGithub)
@@ -88,18 +137,19 @@ orquestador-multiagente/
 │   ├── server.py            # FastAPI + WebSockets
 │   └── index.html           # Dashboard HTML Tailwind
 ├── examples/
-│   ├── dev_example.py       # Ejemplo Dev pipeline
-│   ├── research_example.py  # Ejemplo Research
-│   ├── content_example.py   # Ejemplo Content
-│   ├── office_example.py    # Ejemplo Office
-│   ├── qa_example.py        # Ejemplo QA
-│   ├── trading_example.py   # Ejemplo Trading
-│   └── pm_example.py        # Ejemplo PM
+│   ├── dev_example.py
+│   ├── research_example.py
+│   ├── content_example.py
+│   ├── office_example.py
+│   ├── qa_example.py
+│   ├── trading_example.py
+│   └── pm_example.py
 ├── tests/                   # Tests unitarios básicos
 ├── config.yaml              # Configuración global y pipelines
 ├── main.py                  # Punto de entrada CLI
 ├── requirements.txt
 ├── .env.example
+├── CONTRIBUTING.md
 └── ROADMAP.md
 ```
 
@@ -133,7 +183,7 @@ pip install -r requirements.txt
 
 # Configurar variables de entorno
 cp .env.example .env
-# Edita .env con tus claves (Groq, Supabase, GitHub opcional)
+# Edita .env con tus claves (Groq obligatorio, resto opcional)
 
 # Setup inicial
 python setup.py
@@ -154,7 +204,7 @@ python main.py --task "Tesis de inversion para Solana Q2 2026" --type research
 # Analizar un Excel (pipeline OFFICE)
 python main.py --task "Analiza este backtest" --type office --file data/backtest_sample.xlsx
 
-# Usar clasificación automática
+# Clasificación automática
 python main.py --task "Audita este modulo buscando vulnerabilidades"  # detecta QA
 ```
 
@@ -192,8 +242,10 @@ Implementada en múltiples capas:
 - Paths protegidos (no toca `C:/Windows`, `/etc`, etc.) definidos en `config.yaml`.
 - Lista blanca de comandos permitidos (`pip install`, `pytest`, `git`, etc.).
 - Bloqueo de patrones peligrosos (`rm -rf`, `DROP TABLE`, etc.).
+- **`shell=False`** en todas las ejecuciones de subprocesos para prevenir shell injection.
 - Sandbox de filesystem y comandos en `infrastructure/security_sandbox.py`.
-- Logs detallados de operaciones en `infrastructure/audit_logger.py` y `logs/`.
+- Logs de auditoría en `infrastructure/audit_logger.py` y `logs/`.
+- `GITHUB_CONFIRM_BEFORE_PUSH=true` por defecto — el sistema nunca hace push sin confirmación.
 
 ---
 
@@ -201,8 +253,6 @@ Implementada en múltiples capas:
 
 - Tests unitarios básicos en `tests/` cubren core, agents, infrastructure y tools.
 - Directorio `examples/` contiene scripts listos para correr cada pipeline.
-
-Ejemplo rápido:
 
 ```bash
 python examples/dev_example.py
@@ -214,7 +264,8 @@ python examples/content_example.py
 
 ## 📌 Estado del proyecto
 
-- Este repo refleja la **versión 1.0.0** del orquestador multi-agente descrito en el PDF.
-- Cualquier funcionalidad adicional (plugin Hyperspace, Docker, GitHubPR automático, etc.) está documentada como **deuda técnica** en `ROADMAP.md`.
+- Este repo refleja la **versión 1.0.0** del orquestador multi-agente.
+- Cualquier funcionalidad adicional (Docker, GitHubPR automático, paralelo avanzado, etc.) está documentada como **deuda técnica** en `ROADMAP.md`.
+- Para contribuir, lee `CONTRIBUTING.md`.
 
-Si ves alguna inconsistencia entre el código y el documento, el código y el ROADMAP tienen prioridad como fuente de verdad de la implementación actual.
+Si ves alguna inconsistencia entre el código y la documentación, el código y el ROADMAP tienen prioridad como fuente de verdad.
