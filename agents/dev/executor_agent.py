@@ -13,20 +13,24 @@ class ExecutorAgent(BaseAgent):
 
     async def run(self, context: AgentContext) -> AgentContext:
         generated = context.get_data('generated_files') or {}
-        plan = context.get_data('plan') or {}
-        output_dir = Path(context.output_path or f"output/{plan.get('project_name', 'project')}")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # project_dir ya fue calculado por CoderAgent con la subcarpeta correcta
+        project_dir = Path(
+            context.get_data('project_dir')
+            or context.output_path
+            or './output/project'
+        )
+        project_dir.mkdir(parents=True, exist_ok=True)
 
         written = []
         for file_path, content in generated.items():
-            full_path = output_dir / file_path
+            full_path = project_dir / file_path
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_text(content, encoding='utf-8')
             written.append(str(file_path))
             self.log(context, f"  Escrito: {file_path}")
 
         # Instalar dependencias si requirements.txt fue generado
-        req_file = output_dir / 'requirements.txt'
+        req_file = project_dir / 'requirements.txt'
         if req_file.exists():
             self.log(context, "Instalando dependencias...")
             try:
@@ -47,10 +51,12 @@ class ExecutorAgent(BaseAgent):
                 self.log(context, f"⚠ Error instalando: {e}")
 
         context.set_data('files_written', written)
+        context.output_path = str(project_dir)
         context.final_output = (
-            f"Proyecto generado en: {output_dir}\n"
+            f"Proyecto generado en: {project_dir}\n"
             f"Archivos: {len(written)}\n"
             + "\n".join(f"  - {f}" for f in written)
+            + f"\n\nPara ejecutar:\n  cd {project_dir}\n  {context.get_data('plan', {}).get('run_command', 'python main.py')}"
         )
-        self.log(context, f"✅ Proyecto listo en {output_dir}")
+        self.log(context, f"✅ Proyecto listo en {project_dir}")
         return context

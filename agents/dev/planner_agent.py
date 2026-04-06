@@ -1,6 +1,7 @@
 """PlannerAgent — Convierte descripcion en arbol de archivos + stack."""
 from __future__ import annotations
 import json
+import re
 from core.base_agent import BaseAgent
 from core.context import AgentContext
 
@@ -41,9 +42,16 @@ Devuelve SOLO JSON con esta estructura:
                 "install_commands": [],
                 "run_command": "python main.py",
             }
+
+        # Sanitizar project_name: lowercase, espacios -> guiones, solo alfanumerico y guiones
+        raw_name = plan.get('project_name', 'project') or 'project'
+        safe_name = re.sub(r'[^a-z0-9\-]', '-', raw_name.lower().replace(' ', '-'))
+        safe_name = re.sub(r'-+', '-', safe_name).strip('-') or 'project'
+        plan['project_name'] = safe_name
+
         context.set_data('plan', plan)
         context.set_data('pipeline_name', 'DEV')
-        self.log(context, f"Plan generado: {len(plan.get('files', []))} archivos, stack: {plan.get('stack', [])}")
+        self.log(context, f"Plan generado: {len(plan.get('files', []))} archivos | proyecto: {safe_name} | stack: {plan.get('stack', [])}")
         return context
 
     def _extract_json(self, text: str) -> str:

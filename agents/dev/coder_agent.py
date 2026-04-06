@@ -16,9 +16,12 @@ class CoderAgent(BaseAgent):
             self.log(context, "No hay archivos en el plan.")
             return context
 
-        output_dir = Path(context.output_path or f"output/{plan.get('project_name', 'project')}")
-        generated_files = {}
+        project_name = plan.get('project_name', 'project')
+        base_output = Path(context.output_path or './output')
+        # Siempre crear subcarpeta dedicada: output/{project_name}/
+        project_dir = base_output / project_name
 
+        generated_files = {}
         for file_info in sorted(files, key=lambda x: x.get('priority', 99)):
             file_path = file_info['path']
             self.log(context, f"Generando {file_path}...")
@@ -40,8 +43,9 @@ Reglas:
             self.log(context, f"  {file_path} generado ({len(code)} chars)")
 
         context.set_data('generated_files', generated_files)
-        context.output_path = str(output_dir)
-        self.log(context, f"Total: {len(generated_files)} archivos generados")
+        context.set_data('project_dir', str(project_dir))
+        context.output_path = str(project_dir)
+        self.log(context, f"Total: {len(generated_files)} archivos generados -> {project_dir}")
         return context
 
     def _clean_code(self, text: str) -> str:
