@@ -14,13 +14,24 @@ class BaseAgent(ABC):
 
     Cada agente recibe un AgentContext, lo enriquece con su trabajo
     y lo retorna para que el siguiente agente del pipeline lo use.
+
+    Subclases deben definir:
+      - name: str          (atributo de clase)
+      - description: str   (atributo de clase)
+      - async run(ctx)     (lógica del agente)
+
+    Opcionalmente:
+      - max_retries: int   (default: 3)
     """
 
-    def __init__(self, name: str, description: str = "", max_retries: int = 3):
-        self.name = name
-        self.description = description
-        self.max_retries = max_retries
-        self.logger = logging.getLogger(f"claw.agent.{name}")
+    # Atributos de clase con defaults — las subclases los sobreescriben
+    # sin necesidad de llamar super().__init__().
+    name: str = "BaseAgent"
+    description: str = ""
+    max_retries: int = 3
+
+    # APIRouter lazy — se inicializa solo cuando un agente llama a self.llm()
+    _api_router = None
 
     @abstractmethod
     async def run(self, ctx: AgentContext) -> AgentContext:
@@ -35,42 +46,94 @@ class BaseAgent(ABC):
         """
         pass
 
+    async def llm(
+        self,
+        ctx: AgentContext,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> str:
+        """
+        Helper para llamar al LLM desde cualquier agente.
+
+        Infiere el task_type a partir del nombre del agente para que
+        APIRouter aplique el routing correcto (reasoning vs fast).
+        """
+        if self._api_router is None:
+            from .api_router import APIRouter
+            BaseAgent._api_router = APIRouter()
+
+        # Mapear nombre de agente a task_type del APIRouter
+        name_lower = self.name.lower()
+        if any(k in name_lower for k in ("planner", "architect")):
+            task_type = "planning"
+        elif any(k in name_lower for k in ("coder", "developer")):
+            task_type = "coding"
+        elif any(k in name_lower for k in ("review", "qa", "security")):
+            task_type = "review"
+        elif any(k in name_lower for k in ("analyst", "research", "thesis", "data")):
+            task_type = "analysis"
+        elif any(k in name_lower for k in ("content", "writer")):
+            task_type = "content"
+        elif any(k in name_lower for k in ("summary", "format", "extract")):
+            task_type = "formatting"
+        else:
+            task_type = "reasoning"
+
+        messages = [{"role": "user", "content": prompt}]
+        result = await self._api_router.complete(
+            messages=messages,
+            task_type=task_type,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        ctx.add_tokens(0)  # tokens se actualizarán cuando APIRouter los reporte
+        return result
+
+    def log(self, ctx: AgentContext, message: str) -> None:
+        """Helper para loguear en el contexto y en el logger estándar."""
+        ctx.log(self.name, message)
+        logging.getLogger(f"claw.agent.{self.name}").info(f"[{self.name}] {message}")
+
     async def execute(self, ctx: AgentContext) -> AgentContext:
         """
         Wrapper con manejo de errores, retries y logging automático.
-        El Maestro llama a este método, no a run() directamente.
+        El PipelineRouter llama a este método, no a run() directamente.
         """
         ctx.current_agent = self.name
         ctx.log(self.name, f"Iniciando {self.name}")
-        self.logger.info(f"[{self.name}] Iniciando")
+        logger.info(f"[{self.name}] Iniciando")
 
         attempts = 0
         last_error: Optional[Exception] = None
+        max_retries = getattr(self.__class__, 'max_retries', 3)
 
-        while attempts < self.max_retries:
+        while attempts < max_retries:
             try:
                 attempts += 1
-                ctx.log(self.name, f"Intento {attempts}/{self.max_retries}")
+                ctx.log(self.name, f"Intento {attempts}/{max_retries}")
                 ctx = await self.run(ctx)
                 ctx.mark_agent_done(self.name)
-                ctx.log(self.name, f"✅ Completado exitosamente")
-                self.logger.info(f"[{self.name}] ✅ Completado")
+                ctx.log(self.name, "✅ Completado exitosamente")
+                logger.info(f"[{self.name}] ✅ Completado")
                 return ctx
 
             except Exception as e:
                 last_error = e
-                retry_count = ctx.increment_retry(self.name)
+                ctx.increment_retry(self.name)
                 ctx.log(self.name, f"❌ Error (intento {attempts}): {str(e)}")
-                self.logger.warning(f"[{self.name}] Error intento {attempts}: {e}")
+                logger.warning(f"[{self.name}] Error intento {attempts}: {e}")
 
-                if attempts >= self.max_retries:
+                if attempts >= max_retries:
                     break
 
         # Todos los intentos fallaron
         error_msg = str(last_error) if last_error else "Error desconocido"
         ctx.mark_agent_failed(self.name, error_msg)
-        ctx.log(self.name, f"💥 Falló después de {self.max_retries} intentos: {error_msg}")
-        self.logger.error(f"[{self.name}] 💥 Falló: {error_msg}")
+        ctx.log(self.name, f"💥 Falló después de {max_retries} intentos: {error_msg}")
+        logger.error(f"[{self.name}] 💥 Falló: {error_msg}")
         return ctx
 
     def __repr__(self) -> str:

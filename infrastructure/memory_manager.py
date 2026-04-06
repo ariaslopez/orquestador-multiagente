@@ -62,6 +62,116 @@ class MemoryManager:
                 pass
         return None
 
+    # ------------------------------------------------------------------
+    # Métodos llamados por Maestro.run()
+    # ------------------------------------------------------------------
+
+    async def save_session(self, ctx) -> None:
+        """
+        Guarda o actualiza una sesión completa a partir de un AgentContext.
+        Llamado por Maestro al final de cada pipeline.
+        """
+        now = datetime.utcnow().isoformat()
+        data = ctx.to_dict()
+
+        conn = self._conn()
+        conn.execute("""
+            INSERT INTO sessions
+                (id, session_id, user_input, task_type, status,
+                 final_output, total_tokens, estimated_cost_usd,
+                 duration_seconds, output_path, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                status=excluded.status,
+                final_output=excluded.final_output,
+                total_tokens=excluded.total_tokens,
+                estimated_cost_usd=excluded.estimated_cost_usd,
+                duration_seconds=excluded.duration_seconds,
+                output_path=excluded.output_path,
+                updated_at=excluded.updated_at
+        """, (
+            data.get('session_id', str(uuid.uuid4())),
+            data.get('session_id'),
+            data.get('user_input'),
+            data.get('task_type'),
+            data.get('status', 'completed'),
+            data.get('final_output'),
+            data.get('total_tokens', 0),
+            data.get('estimated_cost_usd', 0.0),
+            data.get('duration_seconds', 0.0),
+            data.get('output_path'),
+            data.get('started_at', now),
+            now,
+        ))
+        conn.commit()
+        conn.close()
+
+        # Sync a Supabase si está configurado
+        if self._supabase:
+            try:
+                self._supabase.table('sessions').upsert({
+                    'session_id': data.get('session_id'),
+                    'user_input': data.get('user_input'),
+                    'task_type': data.get('task_type'),
+                    'status': data.get('status'),
+                    'final_output': data.get('final_output'),
+                    'total_tokens': data.get('total_tokens', 0),
+                    'estimated_cost_usd': data.get('estimated_cost_usd', 0.0),
+                    'duration_seconds': data.get('duration_seconds', 0.0),
+                    'updated_at': now,
+                }).execute()
+            except Exception:
+                pass  # Fallo de Supabase no debe interrumpir el flujo local
+
+    async def find_similar(
+        self,
+        user_input: str,
+        task_type: str,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Busca sesiones anteriores del mismo tipo de tarea.
+        Retorna las últimas N sesiones completadas del mismo task_type,
+        filtrando opcionalmente por keywords del input.
+
+        Enfoque v1: SQL simple sin embeddings.
+        Upgrade path: reemplazar por ChromaDB/pgvector para similitud semántica.
+        """
+        conn = self._conn()
+
+        # Intentar encontrar sesiones con keywords del input actual
+        keywords = [w for w in user_input.lower().split() if len(w) > 4][:3]
+
+        if keywords:
+            like_clause = " OR ".join(["LOWER(user_input) LIKE ?" for _ in keywords])
+            params = [f"%{kw}%" for kw in keywords] + [task_type, limit]
+            rows = conn.execute(f"""
+                SELECT * FROM sessions
+                WHERE status = 'completed'
+                  AND task_type = ?
+                  AND ({like_clause})
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, [task_type] + [f"%{kw}%" for kw in keywords] + [limit]).fetchall()
+        else:
+            rows = []
+
+        # Si no hay resultados por keywords, devolver las últimas del mismo tipo
+        if not rows:
+            rows = conn.execute("""
+                SELECT * FROM sessions
+                WHERE status = 'completed' AND task_type = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (task_type, limit)).fetchall()
+
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Métodos de consulta y mantenimiento
+    # ------------------------------------------------------------------
+
     def create_session(self, user_input: str, task_type: str = '') -> str:
         session_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat()
