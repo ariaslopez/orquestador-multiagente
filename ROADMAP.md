@@ -9,52 +9,41 @@
 ## ✅ Fases completadas (v1.0.0)
 
 ### Fase 1: DEV Pipeline
-- [x] `agents/dev/planner_agent.py` — plan de archivos y stack
-- [x] `agents/dev/coder_agent.py` — genera código archivo por archivo
-- [x] `agents/dev/reviewer_agent.py` — detecta y corrige bugs
-- [x] `agents/dev/security_agent.py` — valida vulnerabilidades
-- [x] `agents/dev/executor_agent.py` — escribe en disco, instala deps
-- [x] `agents/dev/git_agent.py` — hook Git/GitHub (stub seguro)
+- [x] `agents/dev/planner_agent.py`
+- [x] `agents/dev/coder_agent.py`
+- [x] `agents/dev/reviewer_agent.py`
+- [x] `agents/dev/security_agent.py`
+- [x] `agents/dev/executor_agent.py`
+- [x] `agents/dev/git_agent.py`
 
 ### Fase 2: Research, Content y Office
-- [x] `agents/research/webscout_agent.py` — búsqueda web DuckDuckGo
-- [x] `agents/research/data_agent.py` — datos de mercado CoinGecko/DeFiLlama
-- [x] `agents/research/analyst_agent.py` — análisis de datos recopilados
-- [x] `agents/research/thesis_agent.py` — tesis de inversión estructurada
-- [x] `agents/content_agent.py` — contenido crypto con personalidades LLM
-- [x] `agents/office_agent.py` — Excel, PDF, Word, CSV → reportes
+- [x] `agents/research/` — 4 agentes
+- [x] `agents/content_agent.py`
+- [x] `agents/office_agent.py`
 
 ### Fase 3: QA, Trading y PM
-- [x] `agents/qa_agent.py` — auditoría de código (bugs, seguridad, performance)
-- [x] `agents/trading_agent.py` — análisis de bots, backtests, métricas quant
-- [x] `agents/pm_agent.py` — backlog, roadmap y sprints desde descripción
+- [x] `agents/qa_agent.py`
+- [x] `agents/trading_agent.py`
+- [x] `agents/pm_agent.py`
 
 ### Fase 4: Infrastructure
-- [x] `infrastructure/memory_manager.py` — SQLite local + Supabase cloud
-- [x] `infrastructure/security_layer.py` — 5 capas de protección
-- [x] `infrastructure/security_sandbox.py` — sandbox filesystem y comandos
-- [x] `infrastructure/audit_logger.py` — registro completo de operaciones
-- [x] `infrastructure/state_manager.py` — estado de sesión
-- [x] `infrastructure/output_manager.py` — carpetas de salida
+- [x] `infrastructure/memory_manager.py`
+- [x] `infrastructure/security_layer.py`
+- [x] `infrastructure/security_sandbox.py`
+- [x] `infrastructure/audit_logger.py`
+- [x] `infrastructure/state_manager.py`
+- [x] `infrastructure/output_manager.py`
 
 ### Fase 5: Tools
-- [x] `tools/web_search.py` — DuckDuckGo sin API key
-- [x] `tools/safe_filesystem.py` — filesystem auditado
-- [x] `tools/file_ops.py` — operaciones de archivos
-- [x] `tools/office_reader.py` — lectura Office/PDF
-- [x] `tools/code_executor.py` — ejecución segura (shell=False)
-- [x] `tools/crypto_data.py` — datos crypto (CoinGecko/DeFiLlama)
-- [x] `tools/git_ops.py` — integración GitHub API
+- [x] `tools/` — 7 tools
 
 ### Fase 6: UI Dashboard
-- [x] `ui/server.py` — FastAPI + WebSockets
-- [x] `ui/index.html` — dashboard Tailwind con selector de pipeline
-- [x] Endpoints: `/api/task`, `/api/sessions`, `/api/stats`, `/ws/task`
+- [x] `ui/server.py` + `ui/index.html`
 
 ### Fase 7: Documentación y Ejemplos
 - [x] `README.md`, `ROADMAP.md`, `ARCHITECTURE.md`
-- [x] `examples/` — 7 ejemplos listos (uno por pipeline)
-- [x] Tests unitarios en `tests/`
+- [x] `examples/` — 7 ejemplos
+- [x] `tests/` — tests unitarios base
 
 ---
 
@@ -62,89 +51,57 @@
 
 > Completada: Abril 2026
 
-- [x] **CONTENT pipeline** (5 sub-agentes)
-  - [x] `agents/content/topic_agent.py`
-  - [x] `agents/content/writer_agent.py`
-  - [x] `agents/content/editor_agent.py`
-  - [x] `agents/content/brand_agent.py`
-  - [x] `agents/content/scheduler_agent.py`
-
-- [x] **QA pipeline** (5 sub-agentes)
-  - [x] `agents/qa/static_analyzer.py`
-  - [x] `agents/qa/bug_hunter.py`
-  - [x] `agents/qa/security_reviewer.py`
-  - [x] `agents/qa/performance_profiler.py`
-  - [x] `agents/qa/test_generator.py`
-
-- [x] **PM pipeline** (4 sub-agentes)
-  - [x] `agents/pm/requirements_parser.py`
-  - [x] `agents/pm/backlog_builder.py`
-  - [x] `agents/pm/sprint_planner.py`
-  - [x] `agents/pm/roadmap_generator.py`
-
-- [x] **OFFICE pipeline** (3 sub-agentes)
-  - [x] `agents/office/file_reader.py`
-  - [x] `agents/office/data_analyzer.py`
-  - [x] `agents/office/report_writer.py`
-
-- [x] **TRADING pipeline** (4 sub-agentes)
-  - [x] `agents/trading/backtest_reader.py`
-  - [x] `agents/trading/metrics_calculator.py`
-  - [x] `agents/trading/risk_analyzer.py`
-  - [x] `agents/trading/strategy_advisor.py`
-
-- [x] `config.yaml` actualizado con los 5 pipelines expandidos
-- [x] `core/maestro.py` actualizado con los 5 builders
-- [x] `examples/` con ejemplos de todos los pipelines
+- [x] CONTENT pipeline (5 sub-agentes)
+- [x] QA pipeline (5 sub-agentes)
+- [x] PM pipeline (4 sub-agentes)
+- [x] OFFICE pipeline (3 sub-agentes)
+- [x] TRADING pipeline (4 sub-agentes)
+- [x] `config.yaml` + `core/maestro.py` actualizados
 
 ---
 
-## ✅ Fase 9: 5 pipelines nuevos (ANALYTICS, MARKETING, PRODUCT, SECURITY_AUDIT, DESIGN)
+## ✅ Fase 9: 5 pipelines nuevos
 
 > Completada: Abril 2026
 
-- [x] **ANALYTICS pipeline** (3 agentes)
-  - [x] `agents/analytics/data_collector.py` — consolida datos de múltiples fuentes
-  - [x] `agents/analytics/insight_generator.py` — extrae insights de negocio
-  - [x] `agents/analytics/report_distributor.py` — formatea y distribuye reportes
-
-- [x] **MARKETING pipeline** (4 agentes)
-  - [x] `agents/marketing/strategy_agent.py` — estrategia de contenido y canales
-  - [x] `agents/marketing/copy_agent.py` — copywriting para landing, ads, emails
-  - [x] `agents/marketing/growth_agent.py` — loops de adquisición y pricing
-  - [x] `agents/marketing/analytics_agent.py` — métricas de marketing (CAC, LTV)
-
-- [x] **PRODUCT pipeline** (4 agentes)
-  - [x] `agents/product/market_researcher.py` — análisis competitivo
-  - [x] `agents/product/feedback_synthesizer.py` — síntesis de feedback de usuarios
-  - [x] `agents/product/feature_prioritizer.py` — priorización data-driven RICE/MoSCoW
-  - [x] `agents/product/nudge_designer.py` — diseño de nudges de comportamiento
-
-- [x] **SECURITY_AUDIT pipeline** (3 agentes)
-  - [x] `agents/security/threat_modeler.py` — modelado de amenazas STRIDE
-  - [x] `agents/security/code_reviewer.py` — revisión de código OWASP Top 10
-  - [x] `agents/security/compliance_checker.py` — GDPR/CCPA/API TOS compliance
-
-- [x] **DESIGN pipeline** (5 agentes)
-  - [x] `agents/design/ui_agent.py` — design system y especificaciones de componentes
-  - [x] `agents/design/ux_agent.py` — arquitectura de información y user flows
-  - [x] `agents/design/brand_agent.py` — naming, identidad visual y brand guidelines
-  - [x] `agents/design/a11y_agent.py` — auditoría WCAG 2.1 AA
-  - [x] `agents/design/prompt_engineer.py` — prompts para Midjourney/DALL-E/SD
-
-- [x] Clasificador en Maestro expandido a 12 pipelines
-- [x] `config.yaml` con los 5 pipelines nuevos
-- [x] `examples/` con 5 ejemplos nuevos (analytics, marketing, product, security, design)
+- [x] ANALYTICS pipeline (3 agentes)
+- [x] MARKETING pipeline (4 agentes)
+- [x] PRODUCT pipeline (4 agentes)
+- [x] SECURITY_AUDIT pipeline (3 agentes)
+- [x] DESIGN pipeline (5 agentes)
+- [x] Clasificador expandido a 12 pipelines
+- [x] `examples/` con 5 ejemplos nuevos
 
 ---
 
-## 🟡 Fase 10: Observabilidad y tests E2E
+## ✅ Fase 10: Observabilidad y tests E2E
 
-- [ ] Tests de integración E2E para cada pipeline (inputs sintéticos → validar shape de contexto)
-- [ ] Check de regresión: cada agente en `config.yaml` tiene clase importable
-- [ ] Tracing por agente (tiempo, tokens, costo) en `audit_logger.py`
-- [ ] Dashboard de métricas en `ui/index.html` (tokens/sesión, pipeline más usado, costos)
-- [ ] Alertas de error por pipeline (Slack/webhook opcional)
+> Completada: Abril 2026
+
+- [x] **Tracing por agente** — `infrastructure/audit_logger.py`
+  - [x] `log_agent_trace(agent, pipeline, session_id, duration_ms, tokens, cost_usd)`
+  - [x] `get_pipeline_stats()` — agrega métricas por pipeline
+  - [x] `get_most_used_pipeline()`
+- [x] **Tracing automático en BaseAgent** — `core/base_agent.py`
+  - [x] `execute()` captura `time.monotonic()` antes/después de `run()`
+  - [x] Calcula delta tokens y costo por agente individual
+  - [x] Llama `log_agent_trace()` automáticamente, sin tocar subclases
+- [x] **Sanitización prompt injection** — `infrastructure/input_sanitizer.py`
+  - [x] 3 capas: jailbreak patterns, system override, structural injection
+  - [x] Integrado en `/api/task` y `/ws/task` del servidor
+  - [x] Integrado en `Maestro.run()` como primera línea de defensa
+- [x] **Fix regresión CI** — `tests/test_pipeline_imports.py`
+  - [x] `AGENT_REGISTRY` actualizado a los 52 agentes de 12 pipelines
+  - [x] Assert actualizado de 7 → 12 pipelines
+- [x] **Tests E2E** — `tests/test_e2e_pipelines.py`
+  - [x] 12 tests (uno por pipeline) con mock LLM
+  - [x] Valida: `status == completed`, `pipeline_name`, `final_output` no vacío, `total_tokens >= 0`
+- [x] **Tests InputSanitizer** — `tests/test_input_sanitizer.py`
+  - [x] 12 tests: safe inputs, jailbreak, system override, structural, longitud, assert_safe
+- [x] **Dashboard métricas** — `ui/server.py` + `FALLBACK_HTML`
+  - [x] Endpoint `GET /api/metrics` con stats por pipeline
+  - [x] Panel de observabilidad en UI: calls, tokens, costo, avg_duration_ms, error_rate
+  - [x] Selector de 12 pipelines en el formulario
 
 ---
 
@@ -155,17 +112,17 @@
 - [ ] Fly.io deploy config
 - [ ] Migrar memoria SQLite → Supabase como fuente principal
 - [ ] Autenticación en `/api/task` (token o sesión)
-- [ ] Soporte paralelo real con `asyncio.gather` entre agentes (generalizar más allá de RESEARCH)
+- [ ] Soporte paralelo real con `asyncio.gather` entre agentes
 
 ---
 
 ## 🔴 Fase 12: Integraciones avanzadas
 
-- [ ] Agente GitHubPR real (extiende GitAgent + GitOpsTool: branch → commit → PR)
-- [ ] Integración con crypto-intelligence-hub (eventos de mercado → trigger de pipelines)
-- [ ] Plugin Hyperspace como backend LLM local (Ollama compatible)
-- [ ] Multi-proyecto: orquestador puede trabajar sobre repos externos
-- [ ] API pública con rate limiting para uso como SaaS
+- [ ] GitAgent real (branch → commit → PR via GitHub API)
+- [ ] Integración con crypto-intelligence-hub
+- [ ] Plugin Hyperspace como backend LLM local
+- [ ] Multi-proyecto: orquestador sobre repos externos
+- [ ] API pública con rate limiting para SaaS
 
 ---
 
@@ -173,15 +130,12 @@
 
 | Ítem | Severidad | Fase objetivo |
 |------|-----------|---------------|
-| Tests E2E por pipeline | Alta | Fase 10 |
-| Tracing por agente | Alta | Fase 10 |
 | Docker sandbox real | Media | Fase 11 |
 | SQLite → Supabase principal | Media | Fase 11 |
 | Auth en `/api/task` | Media | Fase 11 |
 | GitAgent stub → real | Media | Fase 12 |
 | asyncio.gather generalizado | Baja | Fase 11 |
 | Hyperspace plugin | Baja | Fase 12 |
-| Sanitización de input (prompt injection) | Alta | Fase 10 |
 
 ---
 
@@ -196,29 +150,32 @@ python main.py --doctor
 
 # Ejecutar tarea
 python main.py --task "Crea una API REST para señales de trading" --type dev
-python main.py --task "Tesis de inversión Solana Q2 2026" --type research
-python main.py --task "Analiza este backtest" --type office --file data.xlsx
 python main.py --task "Plan de marketing para SaaS B2B" --type marketing
 python main.py --task "Audita seguridad de esta API" --type security_audit
 
-# Modo interactivo y UI
-python main.py --interactive
+# Tests
+pytest tests/ -v
+pytest tests/test_e2e_pipelines.py -v
+pytest tests/test_pipeline_imports.py -v
+pytest tests/test_input_sanitizer.py -v
+
+# UI
 python main.py --ui  # http://127.0.0.1:8000
 ```
 
 ## Pipelines disponibles (v2.0.0)
 
-| Pipeline | Flag | Agentes | Tipo |
-|----------|------|---------|------|
-| DEV | `--type dev` | 6 agentes | Sub-pipeline |
-| RESEARCH | `--type research` | 4 agentes (2 paralelo + 2 secuencial) | Sub-pipeline |
-| CONTENT | `--type content` | 5 agentes | Sub-pipeline |
-| OFFICE | `--type office` | 3 agentes | Sub-pipeline |
-| QA | `--type qa` | 5 agentes | Sub-pipeline |
-| TRADING | `--type trading` | 4 agentes | Sub-pipeline |
-| PM | `--type pm` | 4 agentes | Sub-pipeline |
-| ANALYTICS | `--type analytics` | 3 agentes | Sub-pipeline |
-| MARKETING | `--type marketing` | 4 agentes | Sub-pipeline |
-| PRODUCT | `--type product` | 4 agentes | Sub-pipeline |
-| SECURITY_AUDIT | `--type security_audit` | 3 agentes | Sub-pipeline |
-| DESIGN | `--type design` | 5 agentes | Sub-pipeline |
+| Pipeline | Flag | Agentes |
+|----------|------|---------|
+| DEV | `--type dev` | 6 |
+| RESEARCH | `--type research` | 4 (2 paralelo + 2 secuencial) |
+| CONTENT | `--type content` | 5 |
+| OFFICE | `--type office` | 3 |
+| QA | `--type qa` | 5 |
+| TRADING | `--type trading` | 4 |
+| PM | `--type pm` | 4 |
+| ANALYTICS | `--type analytics` | 3 |
+| MARKETING | `--type marketing` | 4 |
+| PRODUCT | `--type product` | 4 |
+| SECURITY_AUDIT | `--type security_audit` | 3 |
+| DESIGN | `--type design` | 5 |

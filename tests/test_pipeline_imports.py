@@ -1,8 +1,8 @@
 """Regression test: every agent declared in config.yaml must be importable.
 
-This test acts as a guard against config/code drift:
-if a pipeline declares an agent that doesn't exist as a Python class,
-the test fails immediately — before any runtime error in production.
+Actua como guardia contra config/code drift:
+si un pipeline declara un agente que no existe como clase Python,
+el test falla inmediatamente — antes de cualquier error en produccion.
 
 Run: pytest tests/test_pipeline_imports.py -v
 """
@@ -29,12 +29,56 @@ AGENT_REGISTRY = {
     "data":      ("agents.research.data_agent",     "DataAgent"),
     "analyst":   ("agents.research.analyst_agent",  "AnalystAgent"),
     "thesis":    ("agents.research.thesis_agent",   "ThesisAgent"),
-    # CONTENT / OFFICE / QA / TRADING / PM
-    "content":  ("agents.content_agent",  "ContentAgent"),
-    "office":   ("agents.office_agent",   "OfficeAgent"),
-    "qa":       ("agents.qa_agent",       "QAAgent"),
-    "trading":  ("agents.trading_agent",  "TradingAnalyticsAgent"),
-    "pm":       ("agents.pm_agent",       "PMAgent"),
+    # CONTENT
+    "topic":     ("agents.content.topic_agent",     "TopicAgent"),
+    "writer":    ("agents.content.writer_agent",    "WriterAgent"),
+    "editor":    ("agents.content.editor_agent",    "EditorAgent"),
+    "brand":     ("agents.content.brand_agent",     "BrandAgent"),
+    "scheduler": ("agents.content.scheduler_agent", "SchedulerAgent"),
+    # OFFICE
+    "file_reader":   ("agents.office.file_reader",   "FileReaderAgent"),
+    "data_analyzer": ("agents.office.data_analyzer", "DataAnalyzerAgent"),
+    "report_writer": ("agents.office.report_writer", "ReportWriterAgent"),
+    # QA
+    "static_analyzer":    ("agents.qa.static_analyzer",    "StaticAnalyzerAgent"),
+    "bug_hunter":         ("agents.qa.bug_hunter",         "BugHunterAgent"),
+    "security_reviewer":  ("agents.qa.security_reviewer",  "SecurityReviewerAgent"),
+    "performance_profiler": ("agents.qa.performance_profiler", "PerformanceProfilerAgent"),
+    "test_generator":     ("agents.qa.test_generator",     "TestGeneratorAgent"),
+    # PM
+    "requirements_parser": ("agents.pm.requirements_parser", "RequirementsParserAgent"),
+    "backlog_builder":     ("agents.pm.backlog_builder",     "BacklogBuilderAgent"),
+    "sprint_planner":      ("agents.pm.sprint_planner",      "SprintPlannerAgent"),
+    "roadmap_generator":   ("agents.pm.roadmap_generator",   "RoadmapGeneratorAgent"),
+    # TRADING
+    "backtest_reader":    ("agents.trading.backtest_reader",    "BacktestReaderAgent"),
+    "metrics_calculator": ("agents.trading.metrics_calculator", "MetricsCalculatorAgent"),
+    "risk_analyzer":      ("agents.trading.risk_analyzer",      "RiskAnalyzerAgent"),
+    "strategy_advisor":   ("agents.trading.strategy_advisor",   "StrategyAdvisorAgent"),
+    # ANALYTICS
+    "data_collector":     ("agents.analytics.data_collector",   "DataCollectorAgent"),
+    "insight_generator":  ("agents.analytics.insight_generator", "InsightGeneratorAgent"),
+    "report_distributor": ("agents.analytics.report_distributor", "ReportDistributorAgent"),
+    # MARKETING
+    "strategy_agent":  ("agents.marketing.strategy_agent",  "MarketingStrategyAgent"),
+    "copy_agent":      ("agents.marketing.copy_agent",      "CopyAgent"),
+    "growth_agent":    ("agents.marketing.growth_agent",    "GrowthAgent"),
+    "analytics_agent": ("agents.marketing.analytics_agent", "MarketingAnalyticsAgent"),
+    # PRODUCT
+    "market_researcher":   ("agents.product.market_researcher",   "MarketResearcherAgent"),
+    "feedback_synthesizer":("agents.product.feedback_synthesizer","FeedbackSynthesizerAgent"),
+    "feature_prioritizer": ("agents.product.feature_prioritizer", "FeaturePrioritizerAgent"),
+    "nudge_designer":      ("agents.product.nudge_designer",      "NudgeDesignerAgent"),
+    # SECURITY_AUDIT
+    "threat_modeler":    ("agents.security.threat_modeler",    "ThreatModelerAgent"),
+    "code_reviewer":     ("agents.security.code_reviewer",     "SecurityCodeReviewerAgent"),
+    "compliance_checker":("agents.security.compliance_checker", "ComplianceCheckerAgent"),
+    # DESIGN
+    "ui_agent":       ("agents.design.ui_agent",       "UIAgent"),
+    "ux_agent":       ("agents.design.ux_agent",       "UXAgent"),
+    "brand_agent":    ("agents.design.brand_agent",    "DesignBrandAgent"),
+    "a11y_agent":     ("agents.design.a11y_agent",     "A11yAgent"),
+    "prompt_engineer":("agents.design.prompt_engineer", "PromptEngineerAgent"),
 }
 
 
@@ -108,12 +152,12 @@ class TestPipelineImports(unittest.TestCase):
             "Stale AGENT_REGISTRY entries:\n  " + "\n  ".join(import_errors),
         )
 
-    def test_config_has_seven_pipelines(self):
-        """config.yaml must declare exactly 7 pipelines."""
+    def test_config_has_twelve_pipelines(self):
+        """config.yaml must declare exactly 12 pipelines."""
         pipelines = self.config.get("pipelines", {})
         self.assertEqual(
-            len(pipelines), 7,
-            f"Expected 7 pipelines, found {len(pipelines)}: {list(pipelines.keys())}",
+            len(pipelines), 12,
+            f"Expected 12 pipelines, found {len(pipelines)}: {list(pipelines.keys())}",
         )
 
 
