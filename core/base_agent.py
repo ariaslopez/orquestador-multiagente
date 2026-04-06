@@ -1,11 +1,16 @@
 """BaseAgent — Contrato base que todos los agentes deben implementar."""
 from __future__ import annotations
+import asyncio
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Optional
 from .context import AgentContext
 
 logger = logging.getLogger(__name__)
+
+# Timeout global para llamadas LLM — configurable via .env
+_LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
 
 
 class BaseAgent(ABC):
@@ -24,26 +29,15 @@ class BaseAgent(ABC):
       - max_retries: int   (default: 3)
     """
 
-    # Atributos de clase con defaults — las subclases los sobreescriben
-    # sin necesidad de llamar super().__init__().
     name: str = "BaseAgent"
     description: str = ""
     max_retries: int = 3
 
-    # APIRouter lazy — se inicializa solo cuando un agente llama a self.llm()
+    # APIRouter lazy — singleton compartido por todos los agentes
     _api_router = None
 
     @abstractmethod
     async def run(self, ctx: AgentContext) -> AgentContext:
-        """
-        Ejecuta la lógica del agente.
-
-        Args:
-            ctx: Contexto compartido con datos del pipeline
-
-        Returns:
-            ctx: Contexto actualizado con los resultados del agente
-        """
         pass
 
     async def llm(
@@ -57,17 +51,16 @@ class BaseAgent(ABC):
         """
         Helper para llamar al LLM desde cualquier agente.
 
-        Infiere el task_type a partir del nombre del agente para que
-        APIRouter aplique el routing correcto (reasoning vs fast).
-
-        Desempaca el tuple (text, tokens) de APIRouter.complete() y
-        actualiza las métricas del contexto automáticamente.
+        - Infiere task_type desde el nombre del agente.
+        - Aplica timeout configurable (LLM_TIMEOUT_SECONDS, default 45s).
+        - Actualiza métricas de tokens y costo en el contexto.
+        - asyncio.TimeoutError se convierte en RuntimeError para que
+          el retry loop de execute() lo capture correctamente.
         """
         if self._api_router is None:
             from .api_router import APIRouter
             BaseAgent._api_router = APIRouter()
 
-        # Mapear nombre de agente → task_type del APIRouter
         name_lower = self.name.lower()
         if any(k in name_lower for k in ("planner", "architect")):
             task_type = "planning"
@@ -85,15 +78,26 @@ class BaseAgent(ABC):
             task_type = "reasoning"
 
         messages = [{"role": "user", "content": prompt}]
-        text, tokens = await self._api_router.complete(
-            messages=messages,
-            task_type=task_type,
-            system=system,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
 
-        # Actualizar métricas reales en el contexto
+        try:
+            text, tokens = await asyncio.wait_for(
+                self._api_router.complete(
+                    messages=messages,
+                    task_type=task_type,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ),
+                timeout=_LLM_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            api_used = self._api_router.select_api(task_type)
+            raise RuntimeError(
+                f"[{self.name}] LLM timeout después de {_LLM_TIMEOUT}s "
+                f"(api={api_used}, task_type={task_type}). "
+                f"Ajusta LLM_TIMEOUT_SECONDS en .env si el modelo es lento."
+            )
+
         api_used = self._api_router.select_api(task_type)
         cost = self._api_router.cost_for_tokens(tokens, api_used)
         ctx.add_tokens(tokens, cost=cost, api=api_used)
@@ -101,7 +105,6 @@ class BaseAgent(ABC):
         return text
 
     def log(self, ctx: AgentContext, message: str) -> None:
-        """Helper para loguear en el contexto y en el logger estándar."""
         ctx.log(self.name, message)
         logging.getLogger(f"claw.agent.{self.name}").info(f"[{self.name}] {message}")
 
@@ -116,7 +119,7 @@ class BaseAgent(ABC):
 
         attempts = 0
         last_error: Optional[Exception] = None
-        max_retries = getattr(self.__class__, 'max_retries', 3)
+        max_retries = getattr(self.__class__, "max_retries", 3)
 
         while attempts < max_retries:
             try:
@@ -137,7 +140,6 @@ class BaseAgent(ABC):
                 if attempts >= max_retries:
                     break
 
-        # Todos los intentos fallaron
         error_msg = str(last_error) if last_error else "Error desconocido"
         ctx.mark_agent_failed(self.name, error_msg)
         ctx.log(self.name, f"💥 Falló después de {max_retries} intentos: {error_msg}")
