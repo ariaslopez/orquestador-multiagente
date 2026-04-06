@@ -31,7 +31,6 @@ class PipelineRouter:
             logger.info(f"Pipeline [{ctx.pipeline_name}] → {agent.name}")
             ctx = await agent.execute(ctx)
 
-            # Si el agente falló demasiadas veces, registrar y continuar
             if agent.name in ctx.failed_agents:
                 retries = ctx.retry_counts.get(agent.name, 0)
                 if retries >= max_retries:
@@ -48,39 +47,69 @@ class PipelineRouter:
     ) -> AgentContext:
         """
         1. Corre los agentes paralelos al mismo tiempo (cada uno recibe una copia del ctx)
-        2. Combina sus resultados en el ctx principal
+        2. Combina sus resultados en el ctx principal — sin prefijo de nombre de agente
         3. Continúa con los agentes secuenciales
         """
-        logger.info(f"Pipeline [{ctx.pipeline_name}] → paralelo: {[a.name for a in parallel_agents]}")
-
-        # Crear copias del ctx para cada agente paralelo
         import copy
+        import time
+
+        parallel_names = [a.name for a in parallel_agents]
+        logger.info(f"Pipeline [{ctx.pipeline_name}] → paralelo: {parallel_names}")
+
+        # Cada agente paralelo recibe una copia independiente del ctx
         parallel_tasks = [
             agent.execute(copy.deepcopy(ctx))
             for agent in parallel_agents
         ]
 
-        # Ejecutar todos en paralelo
+        t0 = time.monotonic()
         parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            f"Pipeline [{ctx.pipeline_name}] → paralelo completado en {elapsed:.2f}s"
+        )
 
         # Combinar resultados en el ctx principal
         for i, result in enumerate(parallel_results):
+            agent_name = parallel_agents[i].name
+
             if isinstance(result, Exception):
-                agent_name = parallel_agents[i].name
                 ctx.mark_agent_failed(agent_name, str(result))
                 logger.error(f"Agente paralelo {agent_name} falló: {result}")
-            else:
-                # Merge de datos del ctx paralelo al principal
-                for key, value in result.data.items():
-                    ctx.data[f"{parallel_agents[i].name}_{key}"] = value
-                ctx.completed_agents.extend([
-                    a for a in result.completed_agents
-                    if a not in ctx.completed_agents
-                ])
-                ctx.add_tokens(result.total_tokens, result.estimated_cost_usd)
+                continue
 
-        # Continuar con agentes secuenciales
-        logger.info(f"Pipeline [{ctx.pipeline_name}] → secuencial: {[a.name for a in sequential_agents]}")
+            # Merge de ctx.data SIN prefijo de nombre de agente.
+            # Estrategia "first writer wins": si la key ya existe no se pisa.
+            # Es seguro porque los agentes paralelos escriben en keys disjuntas
+            # (web_results / market_snapshot, market_historical, etc.).
+            for key, value in result.data.items():
+                if key not in ctx.data:
+                    ctx.data[key] = value
+                else:
+                    logger.debug(
+                        f"Merge paralelo: key '{key}' ya existe en ctx, "
+                        f"ignorando valor de {agent_name}"
+                    )
+
+            # Merge de agent_logs (extend, no reemplazar)
+            for log_agent, entries in result.agent_logs.items():
+                if log_agent not in ctx.agent_logs:
+                    ctx.agent_logs[log_agent] = []
+                ctx.agent_logs[log_agent].extend(entries)
+
+            # Merge de métricas acumuladas
+            ctx.add_tokens(result.total_tokens, result.estimated_cost_usd)
+            for api in result.apis_used:
+                if api not in ctx.apis_used:
+                    ctx.apis_used.append(api)
+
+            # Registrar agente como completado
+            if agent_name not in ctx.completed_agents:
+                ctx.completed_agents.append(agent_name)
+
+        # Continuar con agentes secuenciales (reciben ctx enriquecido por paralelos)
+        sequential_names = [a.name for a in sequential_agents]
+        logger.info(f"Pipeline [{ctx.pipeline_name}] → secuencial: {sequential_names}")
         ctx = await self.run_sequential(sequential_agents, ctx)
 
         return ctx
