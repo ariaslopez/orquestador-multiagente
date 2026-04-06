@@ -1,6 +1,6 @@
 # ROADMAP — CLAW Agent System
 
-## Estado actual: v1.0.0 — Sistema estable con 7 pipelines operativos
+## Estado actual: v2.0.0 — 12 pipelines operativos
 
 > Última actualización: Abril 2026
 
@@ -58,83 +58,83 @@
 
 ---
 
-## 🚧 Fase 8: Expandir pipelines macro a sub-pipelines reales
+## ✅ Fase 8: Expandir pipelines macro a sub-pipelines reales
 
-> Objetivo: CONTENT, QA, PM, OFFICE y TRADING pasan de 1 agente macro a cadenas de agentes especializados.
-> Referencia: `ARCHITECTURE.md` — sección "Expansión de pipelines macro".
+> Completada: Abril 2026
 
-- [ ] **CONTENT pipeline** (5 sub-agentes)
-  - [ ] `agents/content/topic_agent.py` — selecciona tema según contexto de mercado
-  - [ ] `agents/content/writer_agent.py` — redacta contenido (hilo, post, newsletter)
-  - [ ] `agents/content/editor_agent.py` — edita tono, longitud, hashtags
-  - [ ] `agents/content/brand_agent.py` — verifica coherencia de marca
-  - [ ] `agents/content/scheduler_agent.py` — propone calendario editorial
+- [x] **CONTENT pipeline** (5 sub-agentes)
+  - [x] `agents/content/topic_agent.py`
+  - [x] `agents/content/writer_agent.py`
+  - [x] `agents/content/editor_agent.py`
+  - [x] `agents/content/brand_agent.py`
+  - [x] `agents/content/scheduler_agent.py`
 
-- [ ] **QA pipeline** (5 sub-agentes)
-  - [ ] `agents/qa/static_analyzer.py` — análisis estático (linting, types)
-  - [ ] `agents/qa/bug_hunter.py` — detección de bugs lógicos
-  - [ ] `agents/qa/security_reviewer.py` — revisión de seguridad (OWASP)
-  - [ ] `agents/qa/performance_profiler.py` — detección de cuellos de botella
-  - [ ] `agents/qa/test_generator.py` — genera tests unitarios faltantes
+- [x] **QA pipeline** (5 sub-agentes)
+  - [x] `agents/qa/static_analyzer.py`
+  - [x] `agents/qa/bug_hunter.py`
+  - [x] `agents/qa/security_reviewer.py`
+  - [x] `agents/qa/performance_profiler.py`
+  - [x] `agents/qa/test_generator.py`
 
-- [ ] **PM pipeline** (4 sub-agentes)
-  - [ ] `agents/pm/requirements_parser.py` — extrae requisitos de descripción libre
-  - [ ] `agents/pm/backlog_builder.py` — crea backlog con épicas e historias
-  - [ ] `agents/pm/sprint_planner.py` — prioriza con RICE/MoSCoW
-  - [ ] `agents/pm/roadmap_generator.py` — genera roadmap con fases y milestones
+- [x] **PM pipeline** (4 sub-agentes)
+  - [x] `agents/pm/requirements_parser.py`
+  - [x] `agents/pm/backlog_builder.py`
+  - [x] `agents/pm/sprint_planner.py`
+  - [x] `agents/pm/roadmap_generator.py`
 
-- [ ] **OFFICE pipeline** (3 sub-agentes)
-  - [ ] `agents/office/file_reader.py` — lectura y extracción de datos
-  - [ ] `agents/office/data_analyzer.py` — análisis estadístico básico
-  - [ ] `agents/office/report_writer.py` — genera reporte estructurado
+- [x] **OFFICE pipeline** (3 sub-agentes)
+  - [x] `agents/office/file_reader.py`
+  - [x] `agents/office/data_analyzer.py`
+  - [x] `agents/office/report_writer.py`
 
-- [ ] **TRADING pipeline** (4 sub-agentes)
-  - [ ] `agents/trading/backtest_reader.py` — parsea resultados de backtest
-  - [ ] `agents/trading/metrics_calculator.py` — Sharpe, drawdown, win rate
-  - [ ] `agents/trading/risk_analyzer.py` — análisis de riesgo y exposición
-  - [ ] `agents/trading/strategy_advisor.py` — recomendaciones de mejora
+- [x] **TRADING pipeline** (4 sub-agentes)
+  - [x] `agents/trading/backtest_reader.py`
+  - [x] `agents/trading/metrics_calculator.py`
+  - [x] `agents/trading/risk_analyzer.py`
+  - [x] `agents/trading/strategy_advisor.py`
 
-- [ ] Actualizar `config.yaml` con los 5 pipelines expandidos
-- [ ] Actualizar `core/maestro.py` con los 5 builders nuevos
-- [ ] Actualizar `examples/` con ejemplos de los pipelines expandidos
+- [x] `config.yaml` actualizado con los 5 pipelines expandidos
+- [x] `core/maestro.py` actualizado con los 5 builders
+- [x] `examples/` con ejemplos de todos los pipelines
 
 ---
 
-## 🔵 Fase 9: 5 pipelines nuevos (DESIGN, MARKETING, ANALYTICS, PRODUCT, SECURITY)
+## ✅ Fase 9: 5 pipelines nuevos (ANALYTICS, MARKETING, PRODUCT, SECURITY_AUDIT, DESIGN)
 
-> Referencia: `ARCHITECTURE.md` — sección "Pipelines nuevos".
+> Completada: Abril 2026
 
-- [ ] **DESIGN pipeline** (5 agentes)
-  - [ ] `agents/design/ui_agent.py` — genera especificaciones de UI/componentes
-  - [ ] `agents/design/ux_agent.py` — arquitectura CSS y design tokens
-  - [ ] `agents/design/brand_agent.py` — guías de marca y naming
-  - [ ] `agents/design/a11y_agent.py` — auditoría WCAG 2.1
-  - [ ] `agents/design/prompt_engineer.py` — prompts para generación de imágenes
+- [x] **ANALYTICS pipeline** (3 agentes)
+  - [x] `agents/analytics/data_collector.py` — consolida datos de múltiples fuentes
+  - [x] `agents/analytics/insight_generator.py` — extrae insights de negocio
+  - [x] `agents/analytics/report_distributor.py` — formatea y distribuye reportes
 
-- [ ] **MARKETING pipeline** (4 agentes)
-  - [ ] `agents/marketing/strategy_agent.py` — estrategia de contenido y canales
-  - [ ] `agents/marketing/copy_agent.py` — copywriting para landing, ads, emails
-  - [ ] `agents/marketing/growth_agent.py` — loops de adquisición y pricing
-  - [ ] `agents/marketing/analytics_agent.py` — métricas de marketing (CAC, LTV)
+- [x] **MARKETING pipeline** (4 agentes)
+  - [x] `agents/marketing/strategy_agent.py` — estrategia de contenido y canales
+  - [x] `agents/marketing/copy_agent.py` — copywriting para landing, ads, emails
+  - [x] `agents/marketing/growth_agent.py` — loops de adquisición y pricing
+  - [x] `agents/marketing/analytics_agent.py` — métricas de marketing (CAC, LTV)
 
-- [ ] **ANALYTICS pipeline** (3 agentes)
-  - [ ] `agents/analytics/data_collector.py` — consolida datos de múltiples fuentes
-  - [ ] `agents/analytics/insight_generator.py` — extrae insights de negocio
-  - [ ] `agents/analytics/report_distributor.py` — formatea y distribuye reportes
+- [x] **PRODUCT pipeline** (4 agentes)
+  - [x] `agents/product/market_researcher.py` — análisis competitivo
+  - [x] `agents/product/feedback_synthesizer.py` — síntesis de feedback de usuarios
+  - [x] `agents/product/feature_prioritizer.py` — priorización data-driven RICE/MoSCoW
+  - [x] `agents/product/nudge_designer.py` — diseño de nudges de comportamiento
 
-- [ ] **PRODUCT pipeline** (4 agentes)
-  - [ ] `agents/product/market_researcher.py` — análisis competitivo
-  - [ ] `agents/product/feedback_synthesizer.py` — síntesis de feedback de usuarios
-  - [ ] `agents/product/feature_prioritizer.py` — priorización data-driven
-  - [ ] `agents/product/nudge_designer.py` — diseño de nudges de comportamiento
+- [x] **SECURITY_AUDIT pipeline** (3 agentes)
+  - [x] `agents/security/threat_modeler.py` — modelado de amenazas STRIDE
+  - [x] `agents/security/code_reviewer.py` — revisión de código OWASP Top 10
+  - [x] `agents/security/compliance_checker.py` — GDPR/CCPA/API TOS compliance
 
-- [ ] **SECURITY_AUDIT pipeline** (3 agentes)
-  - [ ] `agents/security/threat_modeler.py` — modelado de amenazas
-  - [ ] `agents/security/code_reviewer.py` — revisión de código (OWASP Top 10)
-  - [ ] `agents/security/compliance_checker.py` — GDPR/CCPA/API TOS compliance
+- [x] **DESIGN pipeline** (5 agentes)
+  - [x] `agents/design/ui_agent.py` — design system y especificaciones de componentes
+  - [x] `agents/design/ux_agent.py` — arquitectura de información y user flows
+  - [x] `agents/design/brand_agent.py` — naming, identidad visual y brand guidelines
+  - [x] `agents/design/a11y_agent.py` — auditoría WCAG 2.1 AA
+  - [x] `agents/design/prompt_engineer.py` — prompts para Midjourney/DALL-E/SD
 
-- [ ] Clasificador en Maestro para 12 pipelines totales
-- [ ] `config.yaml` con los 5 pipelines nuevos
+- [x] Clasificador en Maestro expandido a 12 pipelines
+- [x] `config.yaml` con los 5 pipelines nuevos
+- [x] `examples/` con 5 ejemplos nuevos (analytics, marketing, product, security, design)
 
 ---
 
@@ -198,20 +198,27 @@ python main.py --doctor
 python main.py --task "Crea una API REST para señales de trading" --type dev
 python main.py --task "Tesis de inversión Solana Q2 2026" --type research
 python main.py --task "Analiza este backtest" --type office --file data.xlsx
+python main.py --task "Plan de marketing para SaaS B2B" --type marketing
+python main.py --task "Audita seguridad de esta API" --type security_audit
 
 # Modo interactivo y UI
 python main.py --interactive
 python main.py --ui  # http://127.0.0.1:8000
 ```
 
-## Pipelines disponibles (v1.0.0)
+## Pipelines disponibles (v2.0.0)
 
-| Pipeline | Flag | Agentes activos | Tipo |
-|----------|------|-----------------|------|
-| DEV | `--type dev` | 6 agentes reales | Sub-pipeline |
+| Pipeline | Flag | Agentes | Tipo |
+|----------|------|---------|------|
+| DEV | `--type dev` | 6 agentes | Sub-pipeline |
 | RESEARCH | `--type research` | 4 agentes (2 paralelo + 2 secuencial) | Sub-pipeline |
-| CONTENT | `--type content` | 1 agente macro | Pendiente expandir (Fase 8) |
-| OFFICE | `--type office` | 1 agente macro | Pendiente expandir (Fase 8) |
-| QA | `--type qa` | 1 agente macro | Pendiente expandir (Fase 8) |
-| TRADING | `--type trading` | 1 agente macro | Pendiente expandir (Fase 8) |
-| PM | `--type pm` | 1 agente macro | Pendiente expandir (Fase 8) |
+| CONTENT | `--type content` | 5 agentes | Sub-pipeline |
+| OFFICE | `--type office` | 3 agentes | Sub-pipeline |
+| QA | `--type qa` | 5 agentes | Sub-pipeline |
+| TRADING | `--type trading` | 4 agentes | Sub-pipeline |
+| PM | `--type pm` | 4 agentes | Sub-pipeline |
+| ANALYTICS | `--type analytics` | 3 agentes | Sub-pipeline |
+| MARKETING | `--type marketing` | 4 agentes | Sub-pipeline |
+| PRODUCT | `--type product` | 4 agentes | Sub-pipeline |
+| SECURITY_AUDIT | `--type security_audit` | 3 agentes | Sub-pipeline |
+| DESIGN | `--type design` | 5 agentes | Sub-pipeline |
