@@ -95,12 +95,9 @@ class APIRouter:
     ) -> Tuple[str, int]:
         from .groq_client import GroqClient
         client = GroqClient()
-        # GroqClient.complete() retorna str — obtenemos usage aparte
-        # si el cliente expone usage, lo usamos; si no, estimamos
         text = await client.complete(
             messages, system=system, temperature=temperature, max_tokens=max_tokens
         )
-        # Estimación por palabras si el cliente no expone tokens
         tokens = self._estimate_tokens(messages, text, system)
         return text, tokens
 
@@ -124,11 +121,11 @@ class APIRouter:
             )
             return model.generate_content(prompt)
 
-        loop = asyncio.get_event_loop()
+        # FIX: get_running_loop() en lugar de get_event_loop() (deprecado en Python 3.10+)
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(None, _sync_call)
 
         text = response.text
-        # Gemini expone usage_metadata
         try:
             tokens = (
                 response.usage_metadata.prompt_token_count
@@ -156,7 +153,8 @@ class APIRouter:
                 max_tokens=max_tokens,
             )
 
-        loop = asyncio.get_event_loop()
+        # FIX: get_running_loop() en lugar de get_event_loop() (deprecado en Python 3.10+)
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(None, _sync_call)
 
         text = response.choices[0].message.content

@@ -25,17 +25,24 @@ class SecuritySandbox:
     """
 
     PROTECTED_PATHS = [
-        # Sistema operativo
+        # Sistema operativo — Linux
         "/etc", "/sys", "/proc", "/boot", "/root",
         "/bin", "/sbin", "/usr/bin", "/usr/sbin",
         "/var/run",
+        # macOS — FIX: agregado para cubrir rutas de usuario y sistema en Mac
+        "/Users",
+        "/Library",
+        "/System",
+        "/private/etc",
         # Windows
         "C:/Windows", "C:/System32", "C:/Program Files",
         "C:\\Windows", "C:\\System32", "C:\\Program Files",
-        # Credenciales de usuario (mergeado desde SecurityLayer)
+        # Credenciales de usuario (todos los OS)
         os.path.expanduser("~/.ssh"),
         os.path.expanduser("~/.aws"),
         os.path.expanduser("~/.gnupg"),
+        os.path.expanduser("~/.config"),
+        os.path.expanduser("~/.local"),
     ]
 
     ALLOWED_COMMANDS = [
@@ -61,8 +68,6 @@ class SecuritySandbox:
         r"curl.*\|.*bash", r"wget.*\|.*sh",
     ]
 
-    # FIXED: {{ }} era escape de f-string en el archivo original —
-    # los cuantificadores ahora son regex validos: {10,} {8,} {36} {52} {35}
     SECRET_PATTERNS = [
         r"[Aa][Pp][Ii][_]?[Kk][Ee][Yy]\s*=\s*['\"][^'\"]{10,}",
         r"[Ss][Ee][Cc][Rr][Ee][Tt]\s*=\s*['\"][^'\"]{10,}",
@@ -71,7 +76,6 @@ class SecuritySandbox:
         r"ghp_[a-zA-Z0-9]{36}",    # GitHub personal token
         r"gsk_[a-zA-Z0-9]{52}",    # Groq token
         r"AIza[0-9A-Za-z\-_]{35}", # Google / Gemini API key
-        # Patrones adicionales de SecurityLayer
         r"(?i)(api[_-]?key|secret[_-]?key|password|passwd|token)[\s=:\"]+[\w\-\.]{8,}",
         r"sk-[a-zA-Z0-9]{32,}",    # OpenAI token
     ]
@@ -96,7 +100,6 @@ class SecuritySandbox:
         self.log_path = log_path or os.getenv("LOGS_PATH", "./logs")
         Path(self.log_path).mkdir(parents=True, exist_ok=True)
         self.audit_file = Path(self.log_path) / "security.log"
-        # Compilar patrones una vez para performance
         self._compiled_blocked = [re.compile(p, re.IGNORECASE) for p in self.BLOCKED_PATTERNS]
         self._compiled_secrets = [re.compile(p) for p in self.SECRET_PATTERNS]
 
@@ -123,7 +126,6 @@ class SecuritySandbox:
     # ------------------------------------------------------------------
     def validate_command(self, command: str) -> bool:
         """Verifica whitelist y ausencia de patrones bloqueados."""
-        # Patrones peligrosos primero (compilados en __init__)
         for pattern in self._compiled_blocked:
             if pattern.search(command):
                 self._audit("CMD_BLOCKED", f"patron peligroso: {command[:100]}")
@@ -148,7 +150,6 @@ class SecuritySandbox:
                 self._audit("NET_OK", url[:100])
                 return True
 
-        # Dominios adicionales configurados en .env
         extra = os.getenv("ALLOWED_DOMAINS", "")
         for domain in extra.split(","):
             if domain.strip() and domain.strip() in url:

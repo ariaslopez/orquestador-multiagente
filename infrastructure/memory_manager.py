@@ -139,20 +139,21 @@ class MemoryManager:
         """
         conn = self._conn()
 
-        # Intentar encontrar sesiones con keywords del input actual
         keywords = [w for w in user_input.lower().split() if len(w) > 4][:3]
 
         if keywords:
             like_clause = " OR ".join(["LOWER(user_input) LIKE ?" for _ in keywords])
-            params = [f"%{kw}%" for kw in keywords] + [task_type, limit]
+            # FIX: params en orden correcto — keywords primero, luego task_type y limit
+            # El WHERE clause es: (LIKE? OR LIKE? ...) AND task_type=?
+            like_params = [f"%{kw}%" for kw in keywords]
             rows = conn.execute(f"""
                 SELECT * FROM sessions
                 WHERE status = 'completed'
-                  AND task_type = ?
                   AND ({like_clause})
+                  AND task_type = ?
                 ORDER BY created_at DESC
                 LIMIT ?
-            """, [task_type] + [f"%{kw}%" for kw in keywords] + [limit]).fetchall()
+            """, like_params + [task_type, limit]).fetchall()
         else:
             rows = []
 
