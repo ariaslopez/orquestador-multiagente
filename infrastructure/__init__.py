@@ -1,7 +1,5 @@
-"""CLAW Agent System — Infrastructure Module."""
-from .memory_manager import MemoryManager
-from .security_sandbox import SecuritySandbox
-from .state_manager import StateManager
-from .output_manager import OutputManager
+from infrastructure.memory_manager import MemoryManager
+from infrastructure.security_layer import SecurityLayer
+from infrastructure.audit_logger import AuditLogger
 
-__all__ = ["MemoryManager", "SecuritySandbox", "StateManager", "OutputManager"]
+__all__ = ['MemoryManager', 'SecurityLayer', 'AuditLogger']
