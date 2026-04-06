@@ -1,15 +1,70 @@
-# Core
-pathlib2>=2.3.7
+# ============================================
+# CLAW Agent System — Dependencies
+# ============================================
 
-# LLM Local (opcional)
-ollama>=0.1.7
+# Core async
+asyncio
+aiohttp>=3.9.0
+httpx>=0.27.0
 
-# Embeddings locales
-sentence-transformers>=2.2.0
+# LLM APIs
+groq>=0.9.0
+google-generativeai>=0.5.0
+openai>=1.30.0
 
-# Vector store local
-chromadb>=0.4.0
+# Web framework (UI dashboard)
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+websockets>=12.0
+jinja2>=3.1.4
+python-multipart>=0.0.9
 
-# Utilidades
+# Database & Memory
+supabase>=2.4.0
+sqlalchemy>=2.0.0
+aiosqlite>=0.20.0
+
+# Web research
+duckduckgo-search>=6.1.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+lxml>=5.2.0
+
+# Crypto data
+pycoingecko>=3.1.0
+
+# Office files
+openpyxl>=3.1.2
+python-docx>=1.1.0
+pdfplumber>=0.11.0
+python-pptx>=0.6.23
+pandas>=2.2.0
+
+# GitHub integration
+PyGithub>=2.3.0
+GitPython>=3.1.43
+
+# Security
+cryptography>=42.0.0
+
+# CLI & Terminal UI
+rich>=13.7.0
+click>=8.1.7
+questionary>=2.0.1
+
+# Utilities
 python-dotenv>=1.0.0
-pytest>=7.4.0
+pyyaml>=6.0.1
+loguru>=0.7.2
+tenacity>=8.3.0
+psutil>=5.9.8
+shutil
+
+# Testing
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+
+# Legacy (offline mode)
+sentence-transformers>=2.2.0
+chromadb>=0.4.0
+ollama>=0.1.7

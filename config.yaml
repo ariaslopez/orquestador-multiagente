@@ -1,0 +1,159 @@
+# ============================================
+# CLAW Agent System — Configuración Global
+# ============================================
+
+app:
+  name: "CLAW Agent System"
+  version: "2.0.0"
+  description: "Orquestador autónomo multi-agente con 7 pipelines especializados"
+
+# --------------------------------------------
+# PERFILES DE AMBIENTE
+# --------------------------------------------
+environments:
+  local:
+    description: "PC local / desarrollo"
+    max_concurrent_tasks: 1
+    memory_backend: sqlite
+    log_level: INFO
+    ui_enabled: true
+    hyperspace_enabled: false
+    groq_model: llama-3.3-70b-versatile
+    gemini_model: gemini-2.0-flash
+
+  server:
+    description: "Servidor cloud / Windows Server / producción"
+    max_concurrent_tasks: 3
+    memory_backend: supabase
+    log_level: WARNING
+    ui_enabled: true
+    hyperspace_enabled: false
+    groq_model: llama-3.3-70b-versatile
+    gemini_model: gemini-2.0-flash
+
+# --------------------------------------------
+# PIPELINES DISPONIBLES
+# --------------------------------------------
+pipelines:
+  dev:
+    name: "Dev Assistant"
+    description: "Genera proyectos de software completos"
+    agents: [planner, coder, reviewer, security, executor, git]
+    mode: sequential
+    max_retries: 3
+    enabled: true
+
+  research:
+    name: "Research Engine"
+    description: "Tesis de inversión con datos web + locales"
+    agents: [web_scout, data, analyst, thesis]
+    mode: parallel_then_sequential
+    parallel_agents: [web_scout, data]
+    sequential_agents: [analyst, thesis]
+    enabled: true
+
+  content:
+    name: "Content Generator"
+    description: "Contenido crypto con personalidades configurables"
+    agents: [persona, writer, publisher]
+    mode: sequential
+    enabled: true
+
+  office:
+    name: "Office Pipeline"
+    description: "Analiza Excel, Word, PDF, PowerPoint"
+    agents: [office_reader, analytics, report]
+    mode: sequential
+    enabled: true
+
+  qa:
+    name: "QA Pipeline"
+    description: "Audita y valida código existente"
+    agents: [security, test, benchmark]
+    mode: sequential
+    enabled: true
+
+  pm:
+    name: "PM Pipeline"
+    description: "Convierte descripciones en backlog estructurado"
+    agents: [planner, sprint, estimator]
+    mode: sequential
+    enabled: true
+
+  trading:
+    name: "Trading Analytics"
+    description: "Analiza performance de bots y estrategias"
+    agents: [log_analyzer, performance, advisor]
+    mode: sequential
+    enabled: true
+
+# --------------------------------------------
+# ROUTER DE APIs LLM
+# Prioridad: groq > gemini > hyperspace
+# --------------------------------------------
+api_router:
+  strategy: smart  # smart | groq_only | gemini_only | local_only
+  rules:
+    - task_type: reasoning
+      api: groq
+      model: llama-3.3-70b-versatile
+    - task_type: fast
+      api: gemini
+      model: gemini-2.0-flash
+    - task_type: embeddings
+      api: hyperspace
+      model: all-MiniLM-L6-v2
+    - task_type: fallback
+      api: gemini
+      model: gemini-2.0-flash
+
+# --------------------------------------------
+# SEGURIDAD
+# --------------------------------------------
+security:
+  protected_paths:
+    - "C:/Windows"
+    - "C:/System32"
+    - "/etc"
+    - "/sys"
+    - "/boot"
+    - "/root"
+  allowed_commands:
+    - "pip install"
+    - "npm install"
+    - "python"
+    - "node"
+    - "cargo build"
+    - "go build"
+    - "pytest"
+    - "git"
+  blocked_patterns:
+    - "rm -rf"
+    - "format"
+    - "del /f"
+    - "DROP TABLE"
+    - "DROP DATABASE"
+  max_file_size_mb: 50
+  scan_for_secrets: true
+
+# --------------------------------------------
+# MEMORIA
+# --------------------------------------------
+memory:
+  local_db: ./data/claw_memory.db
+  sync_to_supabase: true
+  sync_interval_minutes: 5
+  max_history_entries: 1000
+  checkpoint_enabled: true
+
+# --------------------------------------------
+# UI DASHBOARD
+# --------------------------------------------
+ui:
+  theme: dark
+  refresh_interval_ms: 500
+  max_log_lines: 500
+  show_token_usage: true
+  show_cost_estimate: true
+  modules_view: true
+  detailed_logs: true
