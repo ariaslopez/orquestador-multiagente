@@ -1,4 +1,12 @@
-"""SecuritySandbox — 5 capas de protección para operaciones del sistema."""
+"""SecuritySandbox — Clase canonica de seguridad del sistema CLAW.
+
+Cubre 5 capas:
+  1. Path Validation   — bloquea rutas del sistema y credenciales
+  2. Command Whitelist — solo comandos explicitamente permitidos
+  3. Network Audit     — verifica dominios autorizados
+  4. Secrets Detection — escanea y redacta secretos en outputs
+  5. Audit Log         — registra TODA operacion de seguridad
+"""
 from __future__ import annotations
 import os
 import re
@@ -12,27 +20,33 @@ logger = logging.getLogger(__name__)
 
 class SecuritySandbox:
     """
-    5 capas de seguridad:
-    1. Path Validation — verifica rutas contra directorios peligrosos
-    2. Command Whitelist — solo comandos permitidos
-    3. Network Audit — verifica dominios permitidos
-    4. Secrets Protection — detecta datos sensibles en outputs
-    5. Audit Log — registra TODA operación de seguridad
+    Instancia con log_path opcional (default: ./logs).
+    Usada por CodeExecutorTool y SecurityAgent.
     """
 
     PROTECTED_PATHS = [
+        # Sistema operativo
+        "/etc", "/sys", "/proc", "/boot", "/root",
+        "/bin", "/sbin", "/usr/bin", "/usr/sbin",
+        "/var/run",
+        # Windows
         "C:/Windows", "C:/System32", "C:/Program Files",
-        "/etc", "/sys", "/boot", "/root", "/bin", "/sbin", "/usr/bin",
+        "C:\\Windows", "C:\\System32", "C:\\Program Files",
+        # Credenciales de usuario (mergeado desde SecurityLayer)
+        os.path.expanduser("~/.ssh"),
+        os.path.expanduser("~/.aws"),
+        os.path.expanduser("~/.gnupg"),
     ]
 
     ALLOWED_COMMANDS = [
-        "pip install", "pip uninstall",
+        "pip install", "pip3 install", "pip uninstall",
         "npm install", "npm run",
+        "yarn install",
         "python", "python3",
         "node", "npx",
         "cargo build", "cargo run",
-        "go build", "go run",
-        "pytest", "jest",
+        "go build", "go run", "go mod tidy",
+        "pytest", "jest", "unittest",
         "git clone", "git add", "git commit", "git push",
         "git checkout", "git pull", "git branch",
         "mkdir", "touch", "cp", "mv",
@@ -47,14 +61,19 @@ class SecuritySandbox:
         r"curl.*\|.*bash", r"wget.*\|.*sh",
     ]
 
+    # FIXED: {{ }} era escape de f-string en el archivo original —
+    # los cuantificadores ahora son regex validos: {10,} {8,} {36} {52} {35}
     SECRET_PATTERNS = [
-        r"[Aa][Pp][Ii][_]?[Kk][Ee][Yy]\s*=\s*[\'\"][^\'\"]{{10,}}",
-        r"[Ss][Ee][Cc][Rr][Ee][Tt]\s*=\s*[\'\"][^\'\"]{{10,}}",
-        r"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\s*=\s*[\'\"][^\'\"]{{8,}}",
-        r"[Tt][Oo][Kk][Ee][Nn]\s*=\s*[\'\"][^\'\"]{{10,}}",
-        r"ghp_[a-zA-Z0-9]{{36}}",  # GitHub token
-        r"gsk_[a-zA-Z0-9]{{52}}",  # Groq token
-        r"AIza[0-9A-Za-z\-_]{{35}}",  # Google API key
+        r"[Aa][Pp][Ii][_]?[Kk][Ee][Yy]\s*=\s*['\"][^'\"]{10,}",
+        r"[Ss][Ee][Cc][Rr][Ee][Tt]\s*=\s*['\"][^'\"]{10,}",
+        r"[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]\s*=\s*['\"][^'\"]{8,}",
+        r"[Tt][Oo][Kk][Ee][Nn]\s*=\s*['\"][^'\"]{10,}",
+        r"ghp_[a-zA-Z0-9]{36}",    # GitHub personal token
+        r"gsk_[a-zA-Z0-9]{52}",    # Groq token
+        r"AIza[0-9A-Za-z\-_]{35}", # Google / Gemini API key
+        # Patrones adicionales de SecurityLayer
+        r"(?i)(api[_-]?key|secret[_-]?key|password|passwd|token)[\s=:\"]+[\w\-\.]{8,}",
+        r"sk-[a-zA-Z0-9]{32,}",    # OpenAI token
     ]
 
     ALLOWED_DOMAINS = [
@@ -66,23 +85,34 @@ class SecuritySandbox:
         "api.llama.fi",
         "duckduckgo.com",
         "pypi.org",
+        "files.pythonhosted.org",
         "npmjs.com",
         "raw.githubusercontent.com",
+        "localhost",
+        "127.0.0.1",
     ]
 
     def __init__(self, log_path: Optional[str] = None):
         self.log_path = log_path or os.getenv("LOGS_PATH", "./logs")
         Path(self.log_path).mkdir(parents=True, exist_ok=True)
         self.audit_file = Path(self.log_path) / "security.log"
+        # Compilar patrones una vez para performance
+        self._compiled_blocked = [re.compile(p, re.IGNORECASE) for p in self.BLOCKED_PATTERNS]
+        self._compiled_secrets = [re.compile(p) for p in self.SECRET_PATTERNS]
 
     # ------------------------------------------------------------------
     # CAPA 1 — Path Validation
     # ------------------------------------------------------------------
     def validate_path(self, path: str, operation: str = "access") -> bool:
-        """Verifica que la ruta no esté en zonas protegidas."""
-        abs_path = str(Path(path).resolve())
+        """Verifica que la ruta no apunte a zonas protegidas del sistema."""
+        try:
+            abs_path = str(Path(path).resolve())
+        except Exception:
+            self._audit("PATH_BLOCKED", f"ruta invalida: {path[:100]}")
+            return False
+
         for protected in self.PROTECTED_PATHS:
-            if abs_path.lower().startswith(protected.lower()):
+            if abs_path.lower().startswith(str(protected).lower()):
                 self._audit("PATH_BLOCKED", f"{operation}: {abs_path}")
                 return False
         self._audit("PATH_OK", f"{operation}: {abs_path}")
@@ -92,34 +122,33 @@ class SecuritySandbox:
     # CAPA 2 — Command Whitelist
     # ------------------------------------------------------------------
     def validate_command(self, command: str) -> bool:
-        """Verifica que el comando esté en la whitelist y no tenga patrones bloqueados."""
-        # Verificar patrones bloqueados primero
-        for pattern in self.BLOCKED_PATTERNS:
-            if re.search(pattern, command, re.IGNORECASE):
-                self._audit("CMD_BLOCKED", f"Patrón peligroso: {command[:100]}")
+        """Verifica whitelist y ausencia de patrones bloqueados."""
+        # Patrones peligrosos primero (compilados en __init__)
+        for pattern in self._compiled_blocked:
+            if pattern.search(command):
+                self._audit("CMD_BLOCKED", f"patron peligroso: {command[:100]}")
                 return False
 
-        # Verificar que el comando empiece con algo permitido
         cmd_lower = command.strip().lower()
         for allowed in self.ALLOWED_COMMANDS:
             if cmd_lower.startswith(allowed.lower()):
                 self._audit("CMD_OK", command[:100])
                 return True
 
-        self._audit("CMD_BLOCKED", f"No en whitelist: {command[:100]}")
+        self._audit("CMD_BLOCKED", f"no en whitelist: {command[:100]}")
         return False
 
     # ------------------------------------------------------------------
     # CAPA 3 — Network Audit
     # ------------------------------------------------------------------
     def validate_domain(self, url: str) -> bool:
-        """Verifica que la URL pertenece a un dominio permitido."""
+        """Verifica que la URL pertenece a un dominio autorizado."""
         for domain in self.ALLOWED_DOMAINS:
             if domain in url:
                 self._audit("NET_OK", url[:100])
                 return True
 
-        # También permitir dominios adicionales del .env
+        # Dominios adicionales configurados en .env
         extra = os.getenv("ALLOWED_DOMAINS", "")
         for domain in extra.split(","):
             if domain.strip() and domain.strip() in url:
@@ -130,36 +159,35 @@ class SecuritySandbox:
         return False
 
     # ------------------------------------------------------------------
-    # CAPA 4 — Secrets Protection
+    # CAPA 4 — Secrets Detection
     # ------------------------------------------------------------------
     def scan_for_secrets(self, content: str) -> List[str]:
-        """Escanea contenido en busca de secretos expuestos. Retorna lista de hallazgos."""
+        """Escanea contenido buscando secretos. Retorna lista de hallazgos."""
         findings = []
-        for pattern in self.SECRET_PATTERNS:
-            matches = re.findall(pattern, content)
-            if matches:
-                findings.append(f"Posible secreto detectado (patrón: {pattern[:30]}...)")
-                self._audit("SECRET_DETECTED", f"Patrón: {pattern[:30]}")
+        for pattern in self._compiled_secrets:
+            if pattern.search(content):
+                findings.append(f"Posible secreto detectado (patron: {pattern.pattern[:40]}...)")
+                self._audit("SECRET_DETECTED", f"patron: {pattern.pattern[:40]}")
         return findings
 
     def sanitize_output(self, content: str) -> str:
-        """Reemplaza secretos detectados con [REDACTED]."""
-        for pattern in self.SECRET_PATTERNS:
-            content = re.sub(pattern, "[REDACTED]", content)
+        """Reemplaza secretos detectados con [REDACTED] antes de guardar/mostrar."""
+        for pattern in self._compiled_secrets:
+            content = pattern.sub("[REDACTED]", content)
         return content
 
     # ------------------------------------------------------------------
     # CAPA 5 — Audit Log
     # ------------------------------------------------------------------
     def _audit(self, event: str, detail: str) -> None:
-        """Registra un evento de seguridad en el log."""
+        """Registra un evento de seguridad con timestamp UTC."""
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         entry = f"[{timestamp}] [{event}] {detail}\n"
         try:
             with open(self.audit_file, "a", encoding="utf-8") as f:
                 f.write(entry)
         except Exception:
-            pass  # No interrumpir el flujo por un error de log
+            pass  # El log no debe interrumpir el flujo de negocio
         if "BLOCKED" in event or "DETECTED" in event:
             logger.warning(f"SECURITY {event}: {detail}")
         else:
