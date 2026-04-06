@@ -1,49 +1,118 @@
-"""Estado compartido que fluye entre agentes en el pipeline."""
-from dataclasses import dataclass, field
-from typing import Any, Optional
+"""AgentContext — Estado compartido entre agentes durante una sesión."""
+from __future__ import annotations
+import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
 
 
 @dataclass
 class AgentContext:
-    """
-    Contenedor de estado que pasa entre agentes.
-    Cada agente puede leer y enriquecer este contexto.
-    """
+    """Estado compartido que fluye entre todos los agentes de un pipeline."""
 
-    # Input del usuario
-    user_query: str = ""
-    user_files: list = field(default_factory=list)   # archivos adjuntos
-    language: Optional[str] = None                   # lenguaje detectado (python, js, etc.)
+    # Identificadores
+    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
-    # Resultados de cada agente
-    detected_language: Optional[str] = None
-    relevant_docs: list = field(default_factory=list)
-    code_analysis: Optional[dict] = None
-    search_results: list = field(default_factory=list)
-    final_response: Optional[str] = None
-
-    # Metadatos del pipeline
+    # Input original del usuario
+    user_input: str = ""
+    task_type: str = ""          # dev | research | content | office | qa | pm | trading
     pipeline_name: str = ""
-    agents_executed: list = field(default_factory=list)
-    errors: dict = field(default_factory=dict)
-    metadata: dict = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    environment: str = "local"   # local | server
 
-    def add_error(self, agent_name: str, error_msg: str):
-        """Registra un error de un agente."""
-        self.errors[agent_name] = error_msg
+    # Archivos adjuntos
+    input_file: Optional[str] = None
+    input_repo: Optional[str] = None
 
-    def mark_agent_done(self, agent_name: str):
-        """Marca un agente como ejecutado."""
-        self.agents_executed.append(agent_name)
+    # Estado del pipeline
+    current_agent: str = ""
+    completed_agents: List[str] = field(default_factory=list)
+    failed_agents: List[str] = field(default_factory=list)
+    retry_counts: Dict[str, int] = field(default_factory=dict)
 
-    def has_errors(self) -> bool:
-        return len(self.errors) > 0
+    # Datos que los agentes producen y consumen
+    data: Dict[str, Any] = field(default_factory=dict)
 
-    def set_meta(self, key: str, value: Any):
-        """Almacena metadata arbitraria en el contexto."""
-        self.metadata[key] = value
+    # Output final
+    final_output: Optional[str] = None
+    output_path: Optional[str] = None
+    output_files: List[str] = field(default_factory=list)
 
-    def get_meta(self, key: str, default: Any = None) -> Any:
-        return self.metadata.get(key, default)
+    # Métricas
+    started_at: datetime = field(default_factory=datetime.utcnow)
+    finished_at: Optional[datetime] = None
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    apis_used: List[str] = field(default_factory=list)
+
+    # Logs detallados por agente
+    agent_logs: Dict[str, List[str]] = field(default_factory=dict)
+
+    # Estado general
+    status: str = "pending"      # pending | running | completed | failed | paused
+    error: Optional[str] = None
+
+    def log(self, agent_name: str, message: str) -> None:
+        """Agrega un log entry para un agente específico."""
+        if agent_name not in self.agent_logs:
+            self.agent_logs[agent_name] = []
+        timestamp = datetime.utcnow().strftime("%H:%M:%S")
+        self.agent_logs[agent_name].append(f"[{timestamp}] {message}")
+
+    def set_data(self, key: str, value: Any) -> None:
+        """Guarda un dato en el contexto compartido."""
+        self.data[key] = value
+
+    def get_data(self, key: str, default: Any = None) -> Any:
+        """Recupera un dato del contexto compartido."""
+        return self.data.get(key, default)
+
+    def mark_agent_done(self, agent_name: str) -> None:
+        self.completed_agents.append(agent_name)
+
+    def mark_agent_failed(self, agent_name: str, error: str) -> None:
+        self.failed_agents.append(agent_name)
+        self.log(agent_name, f"ERROR: {error}")
+
+    def increment_retry(self, agent_name: str) -> int:
+        self.retry_counts[agent_name] = self.retry_counts.get(agent_name, 0) + 1
+        return self.retry_counts[agent_name]
+
+    def add_tokens(self, tokens: int, cost: float = 0.0, api: str = "") -> None:
+        self.total_tokens += tokens
+        self.estimated_cost_usd += cost
+        if api and api not in self.apis_used:
+            self.apis_used.append(api)
+
+    def finish(self, status: str = "completed") -> None:
+        self.finished_at = datetime.utcnow()
+        self.status = status
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        if self.finished_at:
+            return (self.finished_at - self.started_at).total_seconds()
+        return (datetime.utcnow() - self.started_at).total_seconds()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serializa el contexto para guardarlo en Supabase o SQLite."""
+        return {
+            "session_id": self.session_id,
+            "task_id": self.task_id,
+            "user_input": self.user_input,
+            "task_type": self.task_type,
+            "pipeline_name": self.pipeline_name,
+            "environment": self.environment,
+            "status": self.status,
+            "final_output": self.final_output,
+            "output_path": self.output_path,
+            "total_tokens": self.total_tokens,
+            "estimated_cost_usd": self.estimated_cost_usd,
+            "apis_used": self.apis_used,
+            "duration_seconds": self.duration_seconds,
+            "completed_agents": self.completed_agents,
+            "failed_agents": self.failed_agents,
+            "error": self.error,
+            "started_at": self.started_at.isoformat(),
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }

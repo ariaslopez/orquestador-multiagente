@@ -1,41 +1,40 @@
-"""Definición y ejecución de pipelines de agentes."""
-import logging
-from typing import List
+"""Pipeline — Definición declarativa de un pipeline de agentes."""
+from __future__ import annotations
+from typing import List, Optional
 from .base_agent import BaseAgent
-from .context import AgentContext
-
-logger = logging.getLogger(__name__)
 
 
 class Pipeline:
     """
-    Un pipeline define una secuencia ordenada de agentes.
-    Los agentes se ejecutan en orden, compartiendo el mismo contexto.
+    Definición declarativa de un pipeline.
+    Se usa para registrar y describir pipelines,
+    la ejecución real la hace el PipelineRouter.
     """
 
-    def __init__(self, name: str, description: str = ""):
+    def __init__(self, name: str, description: str = "", mode: str = "sequential"):
         self.name = name
         self.description = description
-        self.agents: List[BaseAgent] = []
+        self.mode = mode  # sequential | parallel_then_sequential
+        self._agents: List[BaseAgent] = []
+        self._parallel_agents: List[BaseAgent] = []
 
     def add_agent(self, agent: BaseAgent) -> "Pipeline":
-        """Agrega un agente al pipeline (fluent interface)."""
-        self.agents.append(agent)
+        """Agrega un agente al pipeline (builder pattern)."""
+        self._agents.append(agent)
         return self
 
-    def execute(self, context: AgentContext) -> AgentContext:
-        """Ejecuta todos los agentes en orden."""
-        for agent in self.agents:
-            if not agent.can_run(context):
-                logger.info(f"Agente '{agent.name}' omitido (can_run=False)")
-                continue
-            try:
-                logger.info(f"▶ Ejecutando agente: {agent.name}")
-                context = agent.run(context)
-                context.mark_agent_done(agent.name)
-                logger.info(f"✓ Agente '{agent.name}' completado")
-            except Exception as e:
-                logger.error(f"✗ Error en agente '{agent.name}': {e}")
-                context = agent.on_error(context, e)
-                # Continúa con el siguiente agente en lugar de abortar
-        return context
+    def add_parallel_agent(self, agent: BaseAgent) -> "Pipeline":
+        """Agrega un agente al grupo paralelo."""
+        self._parallel_agents.append(agent)
+        return self
+
+    @property
+    def agents(self) -> List[BaseAgent]:
+        return self._agents
+
+    @property
+    def parallel_agents(self) -> List[BaseAgent]:
+        return self._parallel_agents
+
+    def __repr__(self) -> str:
+        return f"<Pipeline: {self.name} | {len(self._agents)} agents | mode={self.mode}>"

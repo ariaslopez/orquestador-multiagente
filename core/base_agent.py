@@ -1,45 +1,77 @@
-"""Contrato base para todos los agentes del sistema."""
+"""BaseAgent — Contrato base que todos los agentes deben implementar."""
+from __future__ import annotations
+import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Optional
 from .context import AgentContext
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
     """
-    Clase base que deben heredar todos los agentes.
-    
-    Contrato:
-        - Recibe un AgentContext con el estado actual
-        - Ejecuta su tarea específica
-        - Devuelve el AgentContext enriquecido con su resultado
+    Clase base para todos los agentes del sistema CLAW.
+
+    Cada agente recibe un AgentContext, lo enriquece con su trabajo
+    y lo retorna para que el siguiente agente del pipeline lo use.
     """
 
-    def __init__(self, name: str, description: str = ""):
+    def __init__(self, name: str, description: str = "", max_retries: int = 3):
         self.name = name
         self.description = description
-        self.enabled = True
+        self.max_retries = max_retries
+        self.logger = logging.getLogger(f"claw.agent.{name}")
 
     @abstractmethod
-    def run(self, context: AgentContext) -> AgentContext:
+    async def run(self, ctx: AgentContext) -> AgentContext:
         """
-        Ejecuta la tarea del agente.
-        
+        Ejecuta la lógica del agente.
+
         Args:
-            context: Estado compartido del pipeline
-            
+            ctx: Contexto compartido con datos del pipeline
+
         Returns:
-            context enriquecido con el resultado de este agente
+            ctx: Contexto actualizado con los resultados del agente
         """
         pass
 
-    def can_run(self, context: AgentContext) -> bool:
-        """Verifica si el agente puede ejecutarse con el contexto actual."""
-        return self.enabled
+    async def execute(self, ctx: AgentContext) -> AgentContext:
+        """
+        Wrapper con manejo de errores, retries y logging automático.
+        El Maestro llama a este método, no a run() directamente.
+        """
+        ctx.current_agent = self.name
+        ctx.log(self.name, f"Iniciando {self.name}")
+        self.logger.info(f"[{self.name}] Iniciando")
 
-    def on_error(self, context: AgentContext, error: Exception) -> AgentContext:
-        """Manejo de errores. Puede ser sobreescrito por subclases."""
-        context.add_error(self.name, str(error))
-        return context
+        attempts = 0
+        last_error: Optional[Exception] = None
 
-    def __repr__(self):
-        return f"<Agent:{self.name}>"
+        while attempts < self.max_retries:
+            try:
+                attempts += 1
+                ctx.log(self.name, f"Intento {attempts}/{self.max_retries}")
+                ctx = await self.run(ctx)
+                ctx.mark_agent_done(self.name)
+                ctx.log(self.name, f"✅ Completado exitosamente")
+                self.logger.info(f"[{self.name}] ✅ Completado")
+                return ctx
+
+            except Exception as e:
+                last_error = e
+                retry_count = ctx.increment_retry(self.name)
+                ctx.log(self.name, f"❌ Error (intento {attempts}): {str(e)}")
+                self.logger.warning(f"[{self.name}] Error intento {attempts}: {e}")
+
+                if attempts >= self.max_retries:
+                    break
+
+        # Todos los intentos fallaron
+        error_msg = str(last_error) if last_error else "Error desconocido"
+        ctx.mark_agent_failed(self.name, error_msg)
+        ctx.log(self.name, f"💥 Falló después de {self.max_retries} intentos: {error_msg}")
+        self.logger.error(f"[{self.name}] 💥 Falló: {error_msg}")
+        return ctx
+
+    def __repr__(self) -> str:
+        return f"<Agent: {self.name}>"
