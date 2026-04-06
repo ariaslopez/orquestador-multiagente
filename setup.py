@@ -44,14 +44,15 @@ def install_requirements():
     if result.returncode == 0:
         print("   ✅ Dependencias instaladas")
     else:
-        print(f"   ⚠ï¸  Advertencia: {result.stderr[:200]}")
+        print(f"   ⚠️  Advertencia: {result.stderr[:200]}")
 
 
 def main():
     clear()
-    print("""\n
+    print("""
+
  ╭──────────────────────────────────╮
- │   🧠  CLAW Agent System v2.0.0      │
+ │   🧠  CLAW Agent System v1.0.0      │
  │   Configuración inicial              │
  ╰──────────────────────────────────╯
 """)
@@ -88,7 +89,7 @@ def main():
         Path(output_path).mkdir(parents=True, exist_ok=True)
         print(f"   ✅ Carpeta creada/verificada: {output_path}")
     except Exception as e:
-        print(f"   ⚠ï¸  No se pudo crear la carpeta: {e}")
+        print(f"   ⚠️  No se pudo crear la carpeta: {e}")
         output_path = "./output"
         print(f"   • Usando carpeta local por defecto: {output_path}")
 
@@ -162,7 +163,7 @@ GITHUB_TOKEN={github_token}
 GITHUB_USERNAME=
 GITHUB_PROTECTED_BRANCHES=main,master,production
 GITHUB_AUTO_PR=true
-GITHUB_CONFIRM_BEFORE_PUSH=false
+GITHUB_CONFIRM_BEFORE_PUSH=true
 
 # Rutas
 OUTPUT_PATH={output_path}
