@@ -10,7 +10,7 @@
 - [x] `agents/dev/reviewer_agent.py` — detecta y corrige bugs
 - [x] `agents/dev/security_agent.py` — valida vulnerabilidades criticas
 - [x] `agents/dev/executor_agent.py` — escribe en disco e instala deps
-- [x] `agents/dev/git_agent.py` — hook Git/GitHub (stub seguro, sin PRs aún)
+- [x] `agents/dev/git_agent.py` — hook Git/GitHub (stub seguro, sin PRs aun)
 
 ## ✅ Fase 2: Research, Content y Office Agents
 - [x] `agents/research/webscout_agent.py` — busqueda web via DuckDuckGo
@@ -30,7 +30,7 @@
 - [x] `infrastructure/security_layer.py` — 5 capas de proteccion
 - [x] `infrastructure/security_sandbox.py` — sandbox de filesystem y comandos
 - [x] `infrastructure/audit_logger.py` — registro completo de operaciones
-- [x] `infrastructure/state_manager.py` — orquestador de estado de sesión
+- [x] `infrastructure/state_manager.py` — orquestador de estado de sesion
 - [x] `infrastructure/output_manager.py` — manejo de carpetas de salida
 
 ## ✅ Fase 5: Tools
@@ -38,7 +38,7 @@
 - [x] `tools/safe_filesystem.py` — filesystem auditado y seguro
 - [x] `tools/file_ops.py` — operaciones de archivos de alto nivel
 - [x] `tools/office_reader.py` — lectura de Excel, Word, PDF, PowerPoint
-- [x] `tools/code_executor.py` — ejecucion de código controlada
+- [x] `tools/code_executor.py` — ejecucion segura (shell=False + shlex.split)
 - [x] `tools/crypto_data.py` — datos de mercado crypto (CoinGecko/DeFiLlama)
 - [x] `tools/git_ops.py` — integracion GitHub API (clone, read, list, PR)
 
@@ -63,12 +63,24 @@
 
 ## Pendiente (deuda tecnica registrada)
 
-- [ ] Soporte paralelo avanzado con `asyncio.gather` entre agentes en producción
+### Seguridad
+- [ ] Docker container efimero por tarea en `code_executor.py` (sandboxing real a nivel OS)
+- [ ] Reemplazar `allowed_commands` strings por paths absolutos al interprete del venv
+- [ ] Implementar o eliminar `scan_for_secrets: true` en config.yaml (ya implementado en sandbox, pendiente conectar con executor output)
+
+### Performance
+- [ ] Soporte paralelo real con `asyncio.gather` entre agentes en produccion (RESEARCH pipeline)
+
+### Integraciones
 - [ ] Plugin de Hyperspace como backend LLM local alternativo
 - [ ] Docker-compose para deploy en servidor
 - [ ] Fly.io deploy config
 - [ ] Integracion avanzada con crypto-intelligence-hub (eventos y bots en vivo)
 - [ ] Agente GitHubPR para abrir PRs automaticamente (extiende GitAgent + GitOpsTool)
+
+### Documentacion
+- [ ] Documentar modo offline (Ollama + ChromaDB) vs modo cloud (Groq + Supabase) en README
+- [ ] CONTRIBUTING.md con convenciones del proyecto
 
 ---
 
@@ -98,7 +110,7 @@ python main.py --ui
 ## Pipelines disponibles
 
 | Pipeline | Flag | Descripcion |
-|----------|------|-------------|
+|----------|------|--------------|
 | DEV | `--type dev` | Genera proyectos de software completos |
 | RESEARCH | `--type research` | Tesis de inversion con datos web + mercado |
 | CONTENT | `--type content` | Contenido cripto con personalidades |
