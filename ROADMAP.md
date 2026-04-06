@@ -1,6 +1,6 @@
-# ROADMAP — CLAW Agent System v2.0
+# ROADMAP — CLAW Agent System v1.0.0
 
-## Estado actual: v2.0.1 — Sistema estable con 7 pipelines
+## Estado actual: v1.0.0 — Sistema estable con 7 pipelines
 
 ---
 
@@ -53,18 +53,22 @@
 - [x] `.gitignore` actualizado
 - [x] `examples/dev_example.py` — ejemplo Dev pipeline
 - [x] `examples/research_example.py` — ejemplo Research pipeline
+- [x] `examples/content_example.py` — ejemplo Content pipeline
+- [x] `examples/office_example.py` — ejemplo Office pipeline
+- [x] `examples/qa_example.py` — ejemplo QA pipeline
+- [x] `examples/trading_example.py` — ejemplo Trading pipeline
+- [x] `examples/pm_example.py` — ejemplo PM pipeline
 
 ---
 
 ## Pendiente (deuda tecnica registrada)
 
-- [ ] Ejemplos adicionales en `examples/` para CONTENT/OFFICE/QA/TRADING/PM
-- [ ] Soporte paralelo real con `asyncio.gather` en producción entre agentes
+- [ ] Soporte paralelo avanzado con `asyncio.gather` entre agentes en producción
 - [ ] Plugin de Hyperspace como backend LLM local alternativo
 - [ ] Docker-compose para deploy en servidor
 - [ ] Fly.io deploy config
 - [ ] Integracion avanzada con crypto-intelligence-hub (eventos y bots en vivo)
-- [ ] Agente GitHubPR para abrir PRs automaticamente (extiende GitAgent)
+- [ ] Agente GitHubPR para abrir PRs automaticamente (extiende GitAgent + GitOpsTool)
 
 ---
 
@@ -80,9 +84,9 @@ python setup.py
 python main.py --doctor
 
 # Ejecutar tarea
-python main.py --task "Crea una API REST para senales de trading en FastAPI"
+python main.py --task "Crea una API REST para senales de trading" --type dev
 python main.py --task "Tesis de inversion para Solana Q2 2026" --type research
-python main.py --task "Analiza este Excel de backtesting" --file data.xlsx --type office
+python main.py --task "Analiza este Excel de backtesting" --type office --file data.xlsx
 
 # Modo interactivo
 python main.py --interactive

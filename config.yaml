@@ -4,7 +4,7 @@
 
 app:
   name: "CLAW Agent System"
-  version: "2.0.0"
+  version: "1.0.0"
   description: "Orquestador autónomo multi-agente con 7 pipelines especializados"
 
 # --------------------------------------------
@@ -55,35 +55,35 @@ pipelines:
   content:
     name: "Content Generator"
     description: "Contenido crypto con personalidades configurables"
-    agents: [persona, writer, publisher]
+    agents: [content]
     mode: sequential
     enabled: true
 
   office:
     name: "Office Pipeline"
     description: "Analiza Excel, Word, PDF, PowerPoint"
-    agents: [office_reader, analytics, report]
+    agents: [office]
     mode: sequential
     enabled: true
 
   qa:
     name: "QA Pipeline"
     description: "Audita y valida código existente"
-    agents: [security, test, benchmark]
+    agents: [qa]
     mode: sequential
     enabled: true
 
   pm:
     name: "PM Pipeline"
     description: "Convierte descripciones en backlog estructurado"
-    agents: [planner, sprint, estimator]
+    agents: [pm]
     mode: sequential
     enabled: true
 
   trading:
     name: "Trading Analytics"
     description: "Analiza performance de bots y estrategias"
-    agents: [log_analyzer, performance, advisor]
+    agents: [trading]
     mode: sequential
     enabled: true
 
