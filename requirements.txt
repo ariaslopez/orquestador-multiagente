@@ -3,7 +3,6 @@
 # ============================================
 
 # Core async
-asyncio
 aiohttp>=3.9.0
 httpx>=0.27.0
 
@@ -58,7 +57,6 @@ pyyaml>=6.0.1
 loguru>=0.7.2
 tenacity>=8.3.0
 psutil>=5.9.8
-shutil
 
 # Testing
 pytest>=8.2.0
