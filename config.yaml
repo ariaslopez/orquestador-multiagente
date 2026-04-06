@@ -87,6 +87,43 @@ pipelines:
     mode: sequential
     enabled: true
 
+  # --- Fase 9 ---
+
+  analytics:
+    name: "Analytics Pipeline"
+    description: "Consolida datos, extrae insights de negocio y genera reporte ejecutivo"
+    agents: [data_collector, insight_generator, report_distributor]
+    mode: sequential
+    enabled: true
+
+  marketing:
+    name: "Marketing Pipeline"
+    description: "Estrategia de marketing, copy, growth loops y metricas CAC/LTV"
+    agents: [strategy_agent, copy_agent, growth_agent, analytics_agent]
+    mode: sequential
+    enabled: true
+
+  product:
+    name: "Product Pipeline"
+    description: "Investigacion de mercado, feedback, priorizacion RICE y nudges"
+    agents: [market_researcher, feedback_synthesizer, feature_prioritizer, nudge_designer]
+    mode: sequential
+    enabled: true
+
+  security_audit:
+    name: "Security Audit Pipeline"
+    description: "Modelado de amenazas STRIDE, code review OWASP y compliance GDPR/CCPA"
+    agents: [threat_modeler, code_reviewer, compliance_checker]
+    mode: sequential
+    enabled: true
+
+  design:
+    name: "Design Pipeline"
+    description: "Sistema de diseno UI, arquitectura UX, branding, a11y y prompts de imagen"
+    agents: [ui_agent, ux_agent, brand_agent, a11y_agent, prompt_engineer]
+    mode: sequential
+    enabled: true
+
 # --------------------------------------------
 # ROUTER DE APIs LLM
 # Prioridad: groq > gemini > hyperspace

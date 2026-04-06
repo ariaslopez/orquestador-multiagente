@@ -56,6 +56,31 @@ class Maestro:
             "performance", "win rate", "drawdown", "sharpe",
             "senal", "trading",
         ],
+        "analytics": [
+            "dashboard", "kpi", "metricas de negocio", "insights",
+            "reporte semanal", "analytics", "cohort", "retention",
+            "conversion rate", "funnel", "datos de negocio",
+        ],
+        "marketing": [
+            "marketing", "campana", "publicidad", "ads", "copy",
+            "landing page", "email marketing", "cac", "ltv",
+            "growth", "adquisicion", "posicionamiento", "marca",
+        ],
+        "product": [
+            "producto", "feature", "roadmap de producto", "priorizacion",
+            "user story", "feedback de usuarios", "jtbd", "mvp",
+            "product market fit", "onboarding", "retencion",
+        ],
+        "security_audit": [
+            "owasp", "pentest", "auditoria de seguridad", "vulnerabilidades",
+            "gdpr", "compliance", "threat model", "stride",
+            "inyeccion sql", "xss", "csrf", "autenticacion",
+        ],
+        "design": [
+            "disena", "ui", "ux", "interfaz", "wireframe", "prototipo",
+            "design system", "componentes", "figma", "tipografia",
+            "paleta de colores", "accesibilidad", "wcag", "branding",
+        ],
     }
 
     def __init__(
@@ -105,12 +130,16 @@ class Maestro:
 - qa: auditar, revisar, validar codigo
 - pm: planificar proyectos, crear backlog
 - trading: analizar bots de trading, logs, backtests
+- analytics: KPIs, dashboards, insights de negocio, reportes de datos
+- marketing: campanas, copy, growth, CAC/LTV, posicionamiento
+- product: features, roadmap de producto, feedback de usuarios, priorizacion
+- security_audit: OWASP, threat modeling, compliance GDPR, pentest
+- design: UI/UX, design system, branding, accesibilidad WCAG
 
 Tarea: "{user_input}"
 
 Responde SOLO con la categoria, sin explicacion."""
 
-        # complete() retorna (text, tokens) — solo usamos el texto aqui
         result, _ = await self.api_router.complete(
             messages=[{"role": "user", "content": prompt}],
             task_type="classification",
@@ -118,7 +147,10 @@ Responde SOLO con la categoria, sin explicacion."""
             max_tokens=10,
         )
         task_type = result.strip().lower()
-        valid = {"dev", "research", "content", "office", "qa", "pm", "trading"}
+        valid = {
+            "dev", "research", "content", "office", "qa", "pm", "trading",
+            "analytics", "marketing", "product", "security_audit", "design",
+        }
         return task_type if task_type in valid else "dev"
 
     async def run(
@@ -133,7 +165,6 @@ Responde SOLO con la categoria, sin explicacion."""
         """
         Punto de entrada principal. Recibe el input del usuario y ejecuta el pipeline.
         """
-        # Crear contexto
         ctx = AgentContext(
             user_input=user_input,
             environment=self.environment,
@@ -142,12 +173,10 @@ Responde SOLO con la categoria, sin explicacion."""
             output_path=output_path or os.getenv("OUTPUT_PATH", "./output"),
         )
 
-        # Clasificar tarea
         if task_type:
             ctx.task_type = task_type
         else:
             ctx.task_type = self.classify_task(user_input)
-            # Si la clasificacion es ambigua, verificar con LLM
             if ctx.task_type == "dev" and not any(
                 kw in user_input.lower() for kw in self.TASK_KEYWORDS["dev"]
             ):
@@ -159,14 +188,12 @@ Responde SOLO con la categoria, sin explicacion."""
         logger.info(f"Maestro.run() | task_type={ctx.task_type} | session={ctx.session_id[:8]}")
         ctx.log("maestro", f"Tarea clasificada como: {ctx.task_type}")
 
-        # Consultar memoria — existe trabajo previo similar?
         if self.memory:
             similar = await self.memory.find_similar(user_input, ctx.task_type)
             if similar:
                 ctx.set_data("memory_context", similar)
                 ctx.log("maestro", f"Memoria: encontrado contexto previo ({len(similar)} entradas)")
 
-        # Construir y ejecutar pipeline
         try:
             ctx = await self._execute_pipeline(ctx)
             ctx.finish("completed")
@@ -177,7 +204,6 @@ Responde SOLO con la categoria, sin explicacion."""
             ctx.log("maestro", f"Pipeline fallo: {e}")
             logger.error(f"Maestro: pipeline fallo: {e}")
 
-        # Guardar en memoria
         if self.memory:
             await self.memory.save_session(ctx)
 
@@ -193,6 +219,12 @@ Responde SOLO con la categoria, sin explicacion."""
             "qa": self._build_qa_pipeline,
             "pm": self._build_pm_pipeline,
             "trading": self._build_trading_pipeline,
+            # Fase 9
+            "analytics": self._build_analytics_pipeline,
+            "marketing": self._build_marketing_pipeline,
+            "product": self._build_product_pipeline,
+            "security_audit": self._build_security_audit_pipeline,
+            "design": self._build_design_pipeline,
         }
 
         builder = pipeline_map.get(ctx.task_type)
@@ -211,8 +243,7 @@ Responde SOLO con la categoria, sin explicacion."""
             return await self.pipeline_router.run_sequential(sequential_agents, ctx)
 
     # ------------------------------------------------------------------
-    # BUILDERS — Cada pipeline define sus agentes
-    # Se importan lazy para evitar dependencias circulares
+    # BUILDERS — Fase 1-8 (sin cambios)
     # ------------------------------------------------------------------
 
     def _build_dev_pipeline(self):
@@ -312,5 +343,77 @@ Responde SOLO con la categoria, sin explicacion."""
             MetricsCalculatorAgent(),
             RiskAnalyzerAgent(),
             StrategyAdvisorAgent(),
+        ]
+        return agents, [], "sequential"
+
+    # ------------------------------------------------------------------
+    # BUILDERS — Fase 9
+    # ------------------------------------------------------------------
+
+    def _build_analytics_pipeline(self):
+        from agents.analytics.data_collector import DataCollectorAgent
+        from agents.analytics.insight_generator import InsightGeneratorAgent
+        from agents.analytics.report_distributor import ReportDistributorAgent
+
+        agents = [
+            DataCollectorAgent(),
+            InsightGeneratorAgent(),
+            ReportDistributorAgent(),
+        ]
+        return agents, [], "sequential"
+
+    def _build_marketing_pipeline(self):
+        from agents.marketing.strategy_agent import MarketingStrategyAgent
+        from agents.marketing.copy_agent import CopyAgent
+        from agents.marketing.growth_agent import GrowthAgent
+        from agents.marketing.analytics_agent import MarketingAnalyticsAgent
+
+        agents = [
+            MarketingStrategyAgent(),
+            CopyAgent(),
+            GrowthAgent(),
+            MarketingAnalyticsAgent(),
+        ]
+        return agents, [], "sequential"
+
+    def _build_product_pipeline(self):
+        from agents.product.market_researcher import MarketResearcherAgent
+        from agents.product.feedback_synthesizer import FeedbackSynthesizerAgent
+        from agents.product.feature_prioritizer import FeaturePrioritizerAgent
+        from agents.product.nudge_designer import NudgeDesignerAgent
+
+        agents = [
+            MarketResearcherAgent(),
+            FeedbackSynthesizerAgent(),
+            FeaturePrioritizerAgent(),
+            NudgeDesignerAgent(),
+        ]
+        return agents, [], "sequential"
+
+    def _build_security_audit_pipeline(self):
+        from agents.security.threat_modeler import ThreatModelerAgent
+        from agents.security.code_reviewer import SecurityCodeReviewerAgent
+        from agents.security.compliance_checker import ComplianceCheckerAgent
+
+        agents = [
+            ThreatModelerAgent(),
+            SecurityCodeReviewerAgent(),
+            ComplianceCheckerAgent(),
+        ]
+        return agents, [], "sequential"
+
+    def _build_design_pipeline(self):
+        from agents.design.ui_agent import UIAgent
+        from agents.design.ux_agent import UXAgent
+        from agents.design.brand_agent import DesignBrandAgent
+        from agents.design.a11y_agent import A11yAgent
+        from agents.design.prompt_engineer import PromptEngineerAgent
+
+        agents = [
+            UIAgent(),
+            UXAgent(),
+            DesignBrandAgent(),
+            A11yAgent(),
+            PromptEngineerAgent(),
         ]
         return agents, [], "sequential"
