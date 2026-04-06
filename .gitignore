@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Entorno virtual
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Datos locales (no subir a git)
+data/
+output/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (nunca subir)
+*.pem
+*.key
+*.cert
+secrets.yaml
+secrets.json
+
+# Dependencias
+node_modules/
+
+# Modelos locales descargados
+models/
+*.gguf
+*.bin
