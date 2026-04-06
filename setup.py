@@ -53,7 +53,7 @@ def main():
     print("""
 
  ╭──────────────────────────────────╮
- │   🧠  CLAW Agent System v1.0.0      │
+ │   🧠  CLAW Agent System v2.0.0      │
  │   Configuración inicial              │
  ╰──────────────────────────────────╯
 """)
@@ -109,9 +109,18 @@ def main():
     print("\n   Google Gemini (opcional, gratis): https://aistudio.google.com")
     gemini_key = ask("   Gemini API Key (Enter para omitir)", secret=True)
 
-    print("\n   GitHub Token (opcional — para modificar repos):")
-    print("   Obtener en: GitHub > Settings > Developer settings > Personal access tokens")
+    print("\n   GitHub (opcional — para que el agente modifique repositorios):")
+    print("   Obtener token en: GitHub > Settings > Developer settings > Personal access tokens")
     github_token = ask("   GitHub Token (Enter para omitir)", secret=True)
+
+    # Solo preguntar username si el usuario proporcionó un token.
+    # Sin username el GitAgent falla en runtime con un error poco obvio.
+    github_username = ""
+    if github_token:
+        github_username = ask("   GitHub Username (tu usuario de GitHub)")
+        while not github_username:
+            print("   ❌ El username es requerido cuando se configura un GitHub Token.")
+            github_username = ask("   GitHub Username")
 
     print("\n   Supabase (opcional — para memoria entre sesiones/máquinas):")
     print("   Obtener en: https://supabase.com > Settings > API")
@@ -140,7 +149,7 @@ def main():
     # ----------------------------------------------------------------
     print("\n📝 Generando archivo .env...")
 
-    env_content = f"""# CLAW Agent System — Generado por setup.py
+    env_content = f"""# CLAW Agent System v2.0.0 — Generado por setup.py
 # Creado: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 # Ambiente
@@ -161,7 +170,7 @@ SUPABASE_KEY={supabase_key}
 
 # GitHub
 GITHUB_TOKEN={github_token}
-GITHUB_USERNAME=
+GITHUB_USERNAME={github_username}
 GITHUB_PROTECTED_BRANCHES=main,master,production
 GITHUB_AUTO_PR=true
 GITHUB_CONFIRM_BEFORE_PUSH=true
@@ -188,8 +197,6 @@ AGENT_VERBOSE_LOGS=false
         f.write(env_content)
 
     # Restringir permisos del .env a solo el usuario actual (Unix/Linux/Mac)
-    # En Windows os.chmod es un no-op para permisos de lectura de otros usuarios,
-    # pero no lanza excepcion — se ejecuta de forma segura en todos los OS.
     try:
         os.chmod(".env", stat.S_IRUSR | stat.S_IWUSR)  # 0o600 — solo owner
         print("   ✅ Archivo .env creado (permisos: 600 — solo tu usuario)")
