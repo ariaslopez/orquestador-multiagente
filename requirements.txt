@@ -1,0 +1,15 @@
+# Core
+pathlib2>=2.3.7
+
+# LLM Local (opcional)
+ollama>=0.1.7
+
+# Embeddings locales
+sentence-transformers>=2.2.0
+
+# Vector store local
+chromadb>=0.4.0
+
+# Utilidades
+python-dotenv>=1.0.0
+pytest>=7.4.0
