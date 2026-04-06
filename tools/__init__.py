@@ -1,16 +1,5 @@
-"""CLAW Agent System — Tools Module."""
-from .web_search import WebSearchTool
-from .file_ops import FileOpsTool
-from .office_reader import OfficeReaderTool
-from .code_executor import CodeExecutorTool
-from .crypto_data import CryptoDataTool
-from .git_ops import GitOpsTool
+from tools.web_search import search, search_news
+from tools.safe_filesystem import SafeFileSystem
+from tools.git_agent import GitAgent
 
-__all__ = [
-    "WebSearchTool",
-    "FileOpsTool",
-    "OfficeReaderTool",
-    "CodeExecutorTool",
-    "CryptoDataTool",
-    "GitOpsTool",
-]
+__all__ = ['search', 'search_news', 'SafeFileSystem', 'GitAgent']
