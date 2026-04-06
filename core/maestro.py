@@ -221,49 +221,53 @@ Responde SOLO con la categoría, sin explicación."""
         from agents.dev.security_agent import SecurityAgent
         from agents.dev.executor_agent import ExecutorAgent
         from agents.dev.git_agent import GitAgent
-        agents = [PlannerAgent(), CoderAgent(), ReviewerAgent(), SecurityAgent(), ExecutorAgent(), GitAgent()]
+
+        agents = [
+            PlannerAgent(),
+            CoderAgent(),
+            ReviewerAgent(),
+            SecurityAgent(),
+            ExecutorAgent(),
+            GitAgent(),
+        ]
         return agents, [], "sequential"
 
     def _build_research_pipeline(self):
-        from agents.research.web_scout_agent import WebScoutAgent
+        from agents.research.webscout_agent import WebScoutAgent
         from agents.research.data_agent import DataAgent
         from agents.research.analyst_agent import AnalystAgent
         from agents.research.thesis_agent import ThesisAgent
+
         parallel = [WebScoutAgent(), DataAgent()]
         sequential = [AnalystAgent(), ThesisAgent()]
         return sequential, parallel, "parallel_then_sequential"
 
     def _build_content_pipeline(self):
-        from agents.content.persona_agent import PersonaAgent
-        from agents.content.writer_agent import WriterAgent
-        from agents.content.publisher_agent import PublisherAgent
-        agents = [PersonaAgent(), WriterAgent(), PublisherAgent()]
+        from agents.content_agent import ContentAgent
+
+        agents = [ContentAgent()]
         return agents, [], "sequential"
 
     def _build_office_pipeline(self):
-        from agents.office.office_reader_agent import OfficeReaderAgent
-        from agents.office.analytics_agent import AnalyticsAgent
-        from agents.office.report_agent import ReportAgent
-        agents = [OfficeReaderAgent(), AnalyticsAgent(), ReportAgent()]
+        from agents.office_agent import OfficeAgent
+
+        agents = [OfficeAgent()]
         return agents, [], "sequential"
 
     def _build_qa_pipeline(self):
-        from agents.qa.security_agent import SecurityAuditAgent
-        from agents.qa.test_agent import TestAgent
-        from agents.qa.benchmark_agent import BenchmarkAgent
-        agents = [SecurityAuditAgent(), TestAgent(), BenchmarkAgent()]
+        from agents.qa_agent import QAAgent
+
+        agents = [QAAgent()]
         return agents, [], "sequential"
 
     def _build_pm_pipeline(self):
-        from agents.pm.planner_agent import PMPlannerAgent
-        from agents.pm.sprint_agent import SprintAgent
-        from agents.pm.estimator_agent import EstimatorAgent
-        agents = [PMPlannerAgent(), SprintAgent(), EstimatorAgent()]
+        from agents.pm_agent import PMAgent
+
+        agents = [PMAgent()]
         return agents, [], "sequential"
 
     def _build_trading_pipeline(self):
-        from agents.trading.log_analyzer_agent import LogAnalyzerAgent
-        from agents.trading.performance_agent import PerformanceAgent
-        from agents.trading.advisor_agent import AdvisorAgent
-        agents = [LogAnalyzerAgent(), PerformanceAgent(), AdvisorAgent()]
+        from agents.trading_agent import TradingAnalyticsAgent
+
+        agents = [TradingAnalyticsAgent()]
         return agents, [], "sequential"
