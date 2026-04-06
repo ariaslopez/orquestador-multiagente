@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLAW Agent System — Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-6">
+<div class="max-w-6xl mx-auto space-y-6">
+    <header class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-cyan-400">CLAW Agent System</h1>
+            <p class="text-gray-400 text-sm">Orquestador autónomo multi-agente v2.0 — DEV · RESEARCH · CONTENT · OFFICE · QA · TRADING · PM</p>
+        </div>
+        <span class="text-xs text-gray-500">UI servida desde ui/server.py</span>
+    </header>
+
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-gray-800 rounded-lg p-4 md:col-span-2">
+            <h2 class="text-lg font-semibold mb-2">Nueva tarea</h2>
+            <textarea id="task" class="w-full bg-gray-900 text-white rounded p-3 mb-3 h-28 resize-none"
+                      placeholder="Describe tu tarea en lenguaje natural (ej: 'Crea un bot de arbitraje para Binance con dashboard y logs en Supabase')..."></textarea>
+            <div class="flex flex-wrap gap-2 items-center">
+                <select id="pipeline" class="bg-gray-900 text-white rounded px-3 py-2 text-sm">
+                    <option value="">Auto-detectar pipeline</option>
+                    <option value="dev">DEV — Generar proyecto</option>
+                    <option value="research">RESEARCH — Tesis de inversión</option>
+                    <option value="content">CONTENT — Contenido crypto</option>
+                    <option value="office">OFFICE — Analizar archivo Office/PDF</option>
+                    <option value="qa">QA — Auditoría de código</option>
+                    <option value="trading">TRADING — Analytics de bots/backtests</option>
+                    <option value="pm">PM — Plan de proyecto</option>
+                </select>
+                <input id="file" type="text" placeholder="Ruta de archivo (opcional)" class="flex-1 min-w-[180px] bg-gray-900 text-white rounded px-3 py-2 text-sm" />
+                <button onclick="runTask()" class="bg-cyan-600 hover:bg-cyan-500 px-6 py-2 rounded font-medium text-sm">
+                    Ejecutar tarea
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg p-4 space-y-2">
+            <h2 class="text-lg font-semibold mb-1">Pipelines disponibles</h2>
+            <ul class="text-xs text-gray-300 space-y-1">
+                <li><span class="text-cyan-300 font-mono">DEV</span> — Dev Assistant (Planner → Coder → Reviewer → Security → Executor → Git)</li>
+                <li><span class="text-cyan-300 font-mono">RESEARCH</span> — Research Engine (WebScout ∥ Data → Analyst → Thesis)</li>
+                <li><span class="text-cyan-300 font-mono">CONTENT</span> — Content Generator (ContentAgent)</li>
+                <li><span class="text-cyan-300 font-mono">OFFICE</span> — Office Pipeline (OfficeAgent)</li>
+                <li><span class="text-cyan-300 font-mono">QA</span> — QA Pipeline (QAAgent)</li>
+                <li><span class="text-cyan-300 font-mono">TRADING</span> — Trading Analytics (TradingAnalyticsAgent)</li>
+                <li><span class="text-cyan-300 font-mono">PM</span> — PM Pipeline (PMAgent)</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="output" class="bg-gray-800 rounded-lg p-4 hidden">
+        <div class="flex items-center gap-2 mb-3">
+            <span id="status-dot" class="w-3 h-3 rounded-full bg-yellow-400"></span>
+            <span id="status-text" class="text-xs text-gray-400">Procesando...</span>
+            <span id="pipeline-badge" class="ml-auto bg-cyan-900 text-cyan-300 px-2 py-0.5 rounded text-xs"></span>
+        </div>
+        <pre id="result" class="text-sm text-gray-100 whitespace-pre-wrap"></pre>
+    </section>
+
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-400">
+        <div class="bg-gray-900/40 rounded-lg p-3">
+            <h3 class="font-semibold text-gray-200 mb-1">Atajos útiles</h3>
+            <ul class="list-disc list-inside space-y-1">
+                <li>DEV — describe el stack deseado (Flask/FastAPI, Supabase, Tailwind, etc.).</li>
+                <li>RESEARCH — pide una tesis de inversión o comparativa (ej: L2s, DeFi, NFT).</li>
+                <li>OFFICE — especifica el archivo .xlsx/.csv/.pdf a analizar en el campo de archivo.</li>
+            </ul>
+        </div>
+        <div class="bg-gray-900/40 rounded-lg p-3">
+            <h3 class="font-semibold text-gray-200 mb-1">Estado del sistema</h3>
+            <p id="system-state">Ambiente: local · LLM router: groq + gemini · Memoria: SQLite + Supabase</p>
+        </div>
+    </section>
+</div>
+
+<script>
+async function runTask() {
+    const task = document.getElementById('task').value.trim();
+    const pipeline = document.getElementById('pipeline').value;
+    const inputFile = document.getElementById('file').value.trim() || null;
+    if (!task) return alert('Escribe una tarea primero');
+
+    const out = document.getElementById('output');
+    out.classList.remove('hidden');
+    document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-yellow-400 animate-pulse';
+    document.getElementById('status-text').textContent = 'Procesando...';
+    document.getElementById('result').textContent = '';
+    document.getElementById('pipeline-badge').textContent = pipeline || 'AUTO';
+
+    try {
+        const resp = await fetch('/api/task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task, task_type: pipeline || null, input_file: inputFile, auto: true })
+        });
+        const data = await resp.json();
+        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-green-400';
+        document.getElementById('status-text').textContent = `Completado en ${(data.duration ?? 0).toFixed(1)}s · ${(data.tokens ?? 0).toLocaleString()} tokens · $${(data.cost_usd ?? 0).toFixed(4)} USD`;
+        document.getElementById('pipeline-badge').textContent = data.pipeline || pipeline || 'AUTO';
+        document.getElementById('result').textContent = data.output || '(sin output)';
+    } catch (e) {
+        document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-red-400';
+        document.getElementById('status-text').textContent = 'Error: ' + e.message;
+        document.getElementById('result').textContent = '';
+    }
+}
+</script>
+</body>
+</html>
