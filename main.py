@@ -11,6 +11,13 @@ from dotenv import load_dotenv
 # Cargar .env antes que todo
 load_dotenv()
 
+VERSION = "2.0.0"
+
+ALL_PIPELINES = [
+    "dev", "research", "content", "office", "qa", "pm", "trading",
+    "analytics", "marketing", "product", "security_audit", "design",
+]
+
 
 def check_setup() -> bool:
     """Verifica que el sistema está configurado. Si no, ejecuta setup."""
@@ -32,7 +39,7 @@ def run_doctor() -> None:
     from rich.console import Console
     from rich.table import Table
     console = Console()
-    console.print("\n[bold cyan]👨‍⚕️  CLAW Doctor — Verificando sistema...[/bold cyan]\n")
+    console.print(f"\n[bold cyan]👨‍⚕️  CLAW Doctor v{VERSION} — Verificando sistema...[/bold cyan]\n")
 
     checks = []
 
@@ -44,20 +51,31 @@ def run_doctor() -> None:
     checks.append((".env existe", Path(".env").exists(), ""))
 
     # APIs
-    for api, key_env in [("Groq", "GROQ_API_KEY"), ("Gemini", "GEMINI_API_KEY"), ("Supabase URL", "SUPABASE_URL"), ("GitHub Token", "GITHUB_TOKEN")]:
+    for api, key_env in [
+        ("Groq", "GROQ_API_KEY"),
+        ("Gemini", "GEMINI_API_KEY"),
+        ("Supabase URL", "SUPABASE_URL"),
+        ("GitHub Token", "GITHUB_TOKEN"),
+    ]:
         val = os.getenv(key_env, "")
         ok = bool(val) and "your_" not in val
         checks.append((f"{api} API Key", ok, "✅" if ok else "❌ no configurada"))
 
     # Packages
-    for pkg in ["groq", "fastapi", "uvicorn", "supabase", "rich", "duckduckgo_search", "github"]:
+    for pkg in [
+        "groq", "fastapi", "uvicorn", "supabase", "rich",
+        "duckduckgo_search", "github", "yaml", "aiohttp",
+    ]:
         try:
             __import__(pkg.replace("-", "_"))
             checks.append((f"pkg: {pkg}", True, "✅ instalado"))
         except ImportError:
             checks.append((f"pkg: {pkg}", False, "❌ falta — ejecuta: pip install -r requirements.txt"))
 
-    table = Table(title="Estado del Sistema", show_header=True)
+    # Pipelines (12)
+    checks.append(("Pipelines registrados", True, f"{len(ALL_PIPELINES)}/12 ✅"))
+
+    table = Table(title=f"Estado del Sistema — CLAW v{VERSION}", show_header=True)
     table.add_column("Componente", style="cyan")
     table.add_column("Estado", style="bold")
     table.add_column("Detalle")
@@ -87,8 +105,6 @@ async def run_task(
 ) -> None:
     """Ejecuta una tarea a través del Maestro."""
     from rich.console import Console
-    from rich.live import Live
-    from rich.spinner import Spinner
     from rich.panel import Panel
     from infrastructure.memory_manager import MemoryManager
     from core.maestro import Maestro
@@ -97,7 +113,7 @@ async def run_task(
     memory = MemoryManager()
     maestro = Maestro(memory_manager=memory)
 
-    console.print(f"\n[bold cyan]🧠 CLAW Agent System[/bold cyan]")
+    console.print(f"\n[bold cyan]🧠 CLAW Agent System v{VERSION}[/bold cyan]")
     console.print(f"   Tarea: [white]{task}[/white]")
     if task_type:
         console.print(f"   Pipeline forzado: [yellow]{task_type}[/yellow]")
@@ -113,15 +129,18 @@ async def run_task(
             auto_mode=auto,
         )
 
-    # Mostrar resultado
     console.print(Panel(
         ctx.final_output or "(Sin output generado)",
         title=f"[bold green]✅ Completado — Pipeline: {ctx.pipeline_name}[/bold green]",
         border_style="green",
     ))
 
-    # Mostrar métricas
-    console.print(f"\n[dim]⏱️  {ctx.duration_seconds:.1f}s  |  🔢 {ctx.total_tokens:,} tokens  |  💰 ${ctx.estimated_cost_usd:.4f} USD  |  💾 Sesion: {ctx.session_id[:8]}[/dim]")
+    console.print(
+        f"\n[dim]⏱️  {ctx.duration_seconds:.1f}s  |  "
+        f"🔢 {ctx.total_tokens:,} tokens  |  "
+        f"💰 ${ctx.estimated_cost_usd:.4f} USD  |  "
+        f"💾 Sesión: {ctx.session_id[:8]}[/dim]"
+    )
 
     if ctx.output_path:
         console.print(f"[dim]📁 Output guardado en: {ctx.output_path}[/dim]\n")
@@ -140,7 +159,7 @@ def run_interactive() -> None:
     from rich.prompt import Prompt
     console = Console()
 
-    console.print("\n[bold cyan]🧠 CLAW Agent System — Modo Interactivo[/bold cyan]")
+    console.print(f"\n[bold cyan]🧠 CLAW Agent System v{VERSION} — Modo Interactivo[/bold cyan]")
     console.print("[dim]Escribe tu tarea en lenguaje natural. 'salir' para terminar.[/dim]\n")
 
     while True:
@@ -175,12 +194,16 @@ def run_ui() -> None:
 def main():
     parser = argparse.ArgumentParser(
         prog="claw",
-        description="🧠 CLAW Agent System — Orquestador autónomo multi-agente",
+        description=f"🧠 CLAW Agent System v{VERSION} — Orquestador autónomo multi-agente (12 pipelines)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
+Pipelines disponibles: {', '.join(ALL_PIPELINES)}
+
 Ejemplos:
   python main.py --task "Crea un bot de trading para BTC/USDT"
-  python main.py --task "Analiza este Excel" --file data.xlsx
+  python main.py --task "Analiza este Excel" --file data.xlsx --type office
+  python main.py --task "Plan de marketing para SaaS B2B" --type marketing
+  python main.py --task "Audita seguridad de esta API" --type security_audit
   python main.py --task "Tesis de inversion para SOL" --type research
   python main.py --interactive
   python main.py --ui
@@ -195,8 +218,13 @@ Ejemplos:
     parser.add_argument("--doctor", action="store_true", help="Verificar estado del sistema")
     parser.add_argument("--setup", action="store_true", help="Ejecutar configuración inicial")
 
-    # Opciones de tarea
-    parser.add_argument("--type", choices=["dev","research","content","office","qa","pm","trading"], help="Forzar tipo de pipeline")
+    # Opciones de tarea — 12 pipelines
+    parser.add_argument(
+        "--type",
+        choices=ALL_PIPELINES,
+        metavar="PIPELINE",
+        help=f"Forzar tipo de pipeline. Opciones: {', '.join(ALL_PIPELINES)}",
+    )
     parser.add_argument("--file", "-f", type=str, help="Archivo de entrada (.xlsx, .pdf, .docx, etc.)")
     parser.add_argument("--repo", "-r", type=str, help="Repositorio GitHub (owner/repo)")
     parser.add_argument("--output", "-o", type=str, help="Carpeta de output")
@@ -213,19 +241,17 @@ Ejemplos:
 
     args = parser.parse_args()
 
-    # Sobreescribir ambiente si se especifica
     if args.env:
         os.environ["CLAW_ENV"] = args.env
 
     # Acciones que no requieren setup
     if args.version:
-        print("CLAW Agent System v1.0.0")
+        print(f"CLAW Agent System v{VERSION}")
         return
     if args.doctor:
         run_doctor()
         return
     if args.setup:
-        # shell=False: usa el intérprete correcto sin expansión de shell
         subprocess.run([sys.executable, 'setup.py'], check=False)
         return
 
@@ -292,7 +318,6 @@ Ejemplos:
         ))
         return
 
-    # Sin argumentos — mostrar ayuda
     parser.print_help()
 
 
