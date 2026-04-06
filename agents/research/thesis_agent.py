@@ -10,8 +10,10 @@ class ThesisAgent(BaseAgent):
     description = "Genera la tesis de inversion final con bull/bear case y riesgos."
 
     async def run(self, context: AgentContext) -> AgentContext:
-        analysis = getattr(context, 'analysis', '')
+        analysis = context.get_data('analysis', '')
         if not analysis:
+            self.log(context, "⚠ Sin analisis previo — ThesisAgent no puede generar tesis")
+            context.final_output = "Error: AnalystAgent no produjo analisis. Verifica los datos de entrada."
             return context
 
         self.log(context, "Generando tesis de inversion...")
@@ -50,7 +52,7 @@ Estructura de la tesis:
 ---
 *Este documento es solo para fines informativos y no constituye asesoramiento financiero.*"""
         thesis = await self.llm(context, prompt, temperature=0.3)
-        context.analysis_result = thesis
+        context.set_data('thesis', thesis)
         context.final_output = thesis
         context.pipeline_name = "RESEARCH"
         self.log(context, f"Tesis generada ({len(thesis)} chars)")

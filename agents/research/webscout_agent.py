@@ -11,7 +11,7 @@ class WebScoutAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentContext:
         self.log(context, f"Buscando en web: {context.user_input[:60]}...")
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             results = []
             with DDGS() as ddgs:
                 for r in ddgs.text(context.user_input, max_results=10):
@@ -20,12 +20,12 @@ class WebScoutAgent(BaseAgent):
                         'body': r.get('body', ''),
                         'href': r.get('href', ''),
                     })
-            context.web_results = results
+            context.set_data('web_results', results)
             self.log(context, f"Encontrados {len(results)} resultados web")
         except ImportError:
-            self.log(context, "⚠ duckduckgo_search no instalado, omitiendo busqueda web")
-            context.web_results = []
+            self.log(context, "⚠ ddgs no instalado, omitiendo busqueda web")
+            context.set_data('web_results', [])
         except Exception as e:
             self.log(context, f"⚠ Error en busqueda web: {e}")
-            context.web_results = []
+            context.set_data('web_results', [])
         return context
