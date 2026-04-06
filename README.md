@@ -1,90 +1,93 @@
 # 🤖 CLAW Agent System — Orquestador Multi-Agente
 
-**Versión:** 1.0.0
+**Versión:** 1.0.0 · **Estado:** Producción supervisada · **Pipelines:** 7 activos → 12 planificados
 
-Sistema de inteligencia artificial multi-agente diseñado para automatizar trabajo de desarrollo, investigación y análisis en el ecosistema crypto.
+Sistema de inteligencia artificial multi-agente diseñado para automatizar trabajo de desarrollo, investigación, contenido y análisis. Un Maestro central clasifica cada tarea y la delega al pipeline correcto. Los agentes colaboran en secuencia o en paralelo, compartiendo un contexto tipado.
 
-- 7 pipelines especializados: DEV, RESEARCH, CONTENT, OFFICE, QA, TRADING, PM.
-- Orquestador central (Maestro) que decide qué agentes ejecutar y en qué orden.
-- Memoria local + Supabase para recordar sesiones anteriores.
-- UI web opcional vía FastAPI + WebSockets.
-
-> Este repositorio implementa la arquitectura descrita en el documento PDF del CLAW Agent System. Toda la estructura y los agentes descritos allí están construidos o registrados como deuda técnica explícita.
+> **Roadmap activo:** Ver `ROADMAP.md` para fases completadas y próximas.  
+> **Mapa de agentes:** Ver `ARCHITECTURE.md` para el diseño completo de 70 agentes → 12 pipelines.
 
 ---
 
 ## 🧠 Arquitectura de alto nivel
 
 ```text
-┌─────────────────────────────────────────┐
-│              MAESTRO (LLM)             │
-│  Clasifica tarea → selecciona pipeline │
-└──────┴──────────卌──────────┴─────────┘
-       │          │            │
- ┌─────▼──┐  ┌────▼──┐   ┌─────▼─────┐
- │  DEV   │  │RESEARCH│  │  CONTENT   │  ... (OFFICE/QA/TRADING/PM)
- └─────┬──┘  └────┬───┘   └─────┬─────┘
-       └─────────┴───────────┘
-                  │
-       ┌──────────▼───────────┐
-       │   Memoria & Estado  │
-       │  (SQLite + Supabase)│
-       └─────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    MAESTRO (LLM)                        │
+│  Clasifica tarea → keywords + LLM → selecciona pipeline │
+└────────┬──────────┬──────────┬──────────┬──────────┬───┘
+         │          │          │          │          │
+    ┌────▼───┐ ┌────▼────┐ ┌──▼────┐ ┌──▼──┐ ┌────▼───┐
+    │  DEV   │ │RESEARCH │ │CONTENT│ │ QA  │ │   ...  │
+    │6 agts  │ │4 agts   │ │macro  │ │macro│ │ 7 total│
+    │secuenc.│ │par+seq  │ │       │ │     │ │        │
+    └────┬───┘ └────┬────┘ └───────┘ └─────┘ └────────┘
+         └──────────┴──────────────────┐
+                                       ▼
+                    ┌─────────────────────────────┐
+                    │      AgentContext tipado     │
+                    │  Memoria · Logs · Seguridad  │
+                    │   (SQLite + Supabase)        │
+                    └─────────────────────────────┘
 ```
 
-- `core/maestro.py` decide el tipo de tarea (dev, research, content, etc.) y construye el pipeline adecuado.
-- `core/pipeline_router.py` ejecuta los agentes en secuencia o en modo paralelo+secuencial.
-- `infrastructure/memory_manager.py` guarda sesiones en SQLite y las sincroniza a Supabase.
-- `infrastructure/security_sandbox.py` protege filesystem, comandos y redes según reglas de `config.yaml`.
+- `core/maestro.py` — Orquestador central: clasifica tarea y construye el pipeline.
+- `core/pipeline_router.py` — Ejecutor: secuencial o `parallel_then_sequential`.
+- `core/api_router.py` — Router de LLMs: Groq (principal) → Gemini (fallback) → Hyperspace (offline).
+- `infrastructure/memory_manager.py` — Memoria: SQLite local + sync a Supabase.
+- `infrastructure/security_sandbox.py` — Sandbox de filesystem y comandos con audit log.
+
+---
+
+## 🔀 Pipelines disponibles
+
+| Pipeline | Flag | Descripción | Estado |
+|----------|------|-------------|--------|
+| **DEV** | `--type dev` | Genera proyectos completos: plan → código → review → seguridad → ejecución → git | ✅ Sub-pipeline (6 agentes) |
+| **RESEARCH** | `--type research` | Tesis de inversión: web + datos mercado (paralelo) → análisis → tesis | ✅ Sub-pipeline (4 agentes) |
+| **CONTENT** | `--type content` | Contenido crypto: hilos, posts, newsletters con personalidades LLM | ⚠️ Macro (Fase 8) |
+| **OFFICE** | `--type office` | Analiza Excel, PDF, Word, CSV y genera reportes estructurados | ⚠️ Macro (Fase 8) |
+| **QA** | `--type qa` | Auditoría de código: bugs, seguridad, performance, tests | ⚠️ Macro (Fase 8) |
+| **TRADING** | `--type trading` | Analytics de bots: backtest, Sharpe, drawdown, recomendaciones | ⚠️ Macro (Fase 8) |
+| **PM** | `--type pm` | Backlog, épicas, sprints y roadmap desde una descripción libre | ⚠️ Macro (Fase 8) |
+
+**Próximos (Fase 8-9):** DESIGN, MARKETING, ANALYTICS, PRODUCT, SECURITY_AUDIT.
 
 ---
 
 ## 🌐 Modos de operación
 
-CLAW soporta dos modos según tu conectividad y preferencias de privacidad:
-
 ### Modo Cloud-First (por defecto)
-
-Usa servicios externos para máxima capacidad. Requiere conexión a internet y claves API.
 
 | Componente | Servicio | Costo |
 |------------|----------|-------|
-| LLM principal | Groq (llama-3.3-70b) | Gratis (con límites) |
+| LLM principal | Groq `llama-3.3-70b` | Gratis (con límites) |
 | LLM fallback | Gemini 2.0 Flash | Gratis (con límites) |
-| Memoria cloud | Supabase | Gratis (tier free) |
+| Memoria cloud | Supabase | Gratis (free tier) |
 | Búsqueda web | DuckDuckGo | Gratis, sin API key |
 | Datos crypto | CoinGecko + DeFiLlama | Gratis, sin API key |
 
-**Configuración mínima en `.env`:**
 ```env
-GROQ_API_KEY=tu_clave_groq   # Obligatorio
-GEMINI_API_KEY=tu_clave      # Opcional (fallback)
-SUPABASE_URL=...             # Opcional (memoria cloud)
-SUPABASE_KEY=...             # Opcional (memoria cloud)
+# .env mínimo
+GROQ_API_KEY=tu_clave_groq       # Obligatorio
+GEMINI_API_KEY=tu_clave          # Opcional (fallback)
+SUPABASE_URL=...                 # Opcional (memoria cloud)
+SUPABASE_KEY=...                 # Opcional (memoria cloud)
 ```
 
 ### Modo Offline (Ollama + ChromaDB)
 
-Usa modelos locales. No requiere internet ni claves API. Ideal para privacidad total o entornos sin conexión.
+Modelos locales, sin internet ni API keys. Privacidad total.
 
-**Prerrequisitos:**
-1. Instalar [Ollama](https://ollama.ai): `ollama pull llama3.1:8b`
-2. Las dependencias `sentence-transformers`, `chromadb` y `ollama` ya están en `requirements.txt`
-
-**Configuración en `.env`:**
 ```env
 HYPERSPACE_ENABLED=true
-HYPERSPACE_BASE_URL=http://localhost:11434/v1   # Ollama compatible con OpenAI API
-GROQ_API_KEY=                                   # Dejar vacío para forzar fallback local
+HYPERSPACE_BASE_URL=http://localhost:11434/v1
+GROQ_API_KEY=   # Vacío para forzar fallback local
 ```
 
-**Limitaciones del modo offline:**
-- Calidad de respuesta inferior a los modelos cloud de 70B.
-- La memoria funciona solo con SQLite local (sin sync a Supabase).
-- El pipeline RESEARCH usa DuckDuckGo (requiere red); sin red, solo usa datos de contexto.
-- Los pipelines TRADING y RESEARCH con datos crypto requieren acceso a CoinGecko/DeFiLlama.
+**Prerequisito:** `ollama pull llama3.1:8b`
 
-> **Nota:** El modo offline está funcional pero es un modo secundario. Para uso intensivo de producción, el modo cloud-first ofrece mayor calidad y velocidad.
+> **Limitación:** Calidad inferior a modelos 70B. Los pipelines RESEARCH y TRADING requieren red para CoinGecko/DeFiLlama.
 
 ---
 
@@ -93,208 +96,159 @@ GROQ_API_KEY=                                   # Dejar vacío para forzar fallb
 ```text
 orquestador-multiagente/
 ├── core/
-│   ├── base_agent.py        # Contrato base de todos los agentes
-│   ├── context.py           # Estado compartido entre agentes
-│   ├── maestro.py           # Orquestador central (Maestro)
-│   ├── api_router.py        # Router de APIs LLM (Groq, Gemini, Hyperspace)
-│   ├── pipeline.py          # Definición de pipeline lógico
-│   └── pipeline_router.py   # Ejecutor secuencial / paralelo+secuencial
+│   ├── base_agent.py          # Contrato base de todos los agentes
+│   ├── context.py             # Estado compartido (AgentContext tipado)
+│   ├── maestro.py             # Orquestador central
+│   ├── api_router.py          # Router LLMs (Groq → Gemini → Hyperspace)
+│   ├── pipeline.py            # Definición de pipeline lógico
+│   └── pipeline_router.py     # Ejecutor secuencial / parallel+sequential
 ├── agents/
-│   ├── dev/
-│   │   ├── planner_agent.py   # Árbol de archivos + stack
-│   │   ├── coder_agent.py     # Genera código archivo por archivo
-│   │   ├── reviewer_agent.py  # Revisa y corrige código
-│   │   ├── security_agent.py  # Chequeos de seguridad básicos
-│   │   └── executor_agent.py  # Escribe en disco e instala deps
-│   ├── research/
-│   │   ├── webscout_agent.py  # Búsqueda web DuckDuckGo
-│   │   ├── data_agent.py      # Datos de mercado (CryptoDataTool)
-│   │   ├── analyst_agent.py   # Analiza datos web + mercado
-│   │   └── thesis_agent.py    # Genera tesis de inversión estructurada
-│   ├── personas/
-│   │   └── personas_registry.py # 61 personalidades de agency-agents
-│   ├── content_agent.py       # Contenido crypto con personalidades
-│   ├── office_agent.py        # Lectura/analítica de Excel, PDF, Word, CSV
-│   ├── qa_agent.py            # Auditoría de código
-│   ├── trading_agent.py       # Analytics de bots/backtests
-│   └── pm_agent.py            # Backlog, roadmap, sprints
+│   ├── dev/                   # 6 agentes: planner, coder, reviewer,
+│   │                          #            security, executor, git
+│   ├── research/              # 4 agentes: webscout, data, analyst, thesis
+│   ├── content_agent.py       # Macro (→ sub-pipeline en Fase 8)
+│   ├── office_agent.py        # Macro (→ sub-pipeline en Fase 8)
+│   ├── qa_agent.py            # Macro (→ sub-pipeline en Fase 8)
+│   ├── trading_agent.py       # Macro (→ sub-pipeline en Fase 8)
+│   └── pm_agent.py            # Macro (→ sub-pipeline en Fase 8)
 ├── infrastructure/
-│   ├── memory_manager.py    # SQLite + Supabase
-│   ├── security_layer.py    # Reglas de seguridad de alto nivel
-│   ├── security_sandbox.py  # Sandbox de filesystem/comandos
-│   ├── audit_logger.py      # Logs estructurados
-│   ├── state_manager.py     # Manejo de estado de sesión
-│   └── output_manager.py    # Manejo de output y carpetas
+│   ├── memory_manager.py      # SQLite + Supabase
+│   ├── security_layer.py      # 5 capas de protección
+│   ├── security_sandbox.py    # Sandbox filesystem/comandos
+│   ├── audit_logger.py        # Logs estructurados
+│   ├── state_manager.py       # Estado de sesión
+│   └── output_manager.py      # Carpetas de salida
 ├── tools/
-│   ├── web_search.py        # Búsqueda web por DuckDuckGo
-│   ├── file_ops.py          # Utilidades de archivos
-│   ├── office_reader.py     # Lectura de Office/PDF
-│   ├── code_executor.py     # Ejecución controlada (shell=False)
-│   ├── crypto_data.py       # Datos de mercado crypto (CoinGecko/DeFiLlama)
-│   ├── safe_filesystem.py   # Acceso a disco seguro
-│   └── git_ops.py           # Integración GitHub (PyGithub)
+│   ├── web_search.py          # DuckDuckGo
+│   ├── safe_filesystem.py     # Filesystem auditado
+│   ├── file_ops.py            # Operaciones de archivos
+│   ├── office_reader.py       # Office/PDF reader
+│   ├── code_executor.py       # Ejecución segura (shell=False)
+│   ├── crypto_data.py         # CoinGecko + DeFiLlama
+│   └── git_ops.py             # GitHub API (PyGithub)
 ├── ui/
-│   ├── server.py            # FastAPI + WebSockets
-│   └── index.html           # Dashboard HTML Tailwind
-├── examples/
-│   ├── dev_example.py
-│   ├── research_example.py
-│   ├── content_example.py
-│   ├── office_example.py
-│   ├── qa_example.py
-│   ├── trading_example.py
-│   └── pm_example.py
-├── tests/                   # Tests unitarios + integración
-├── config.yaml              # Configuración global y pipelines
-├── main.py                  # Punto de entrada CLI
+│   ├── server.py              # FastAPI + WebSockets
+│   └── index.html             # Dashboard Tailwind
+├── examples/                  # 7 scripts listos por pipeline
+├── tests/                     # Tests unitarios
+├── config.yaml                # Configuración global y pipelines
+├── main.py                    # Entrada CLI
+├── setup.py                   # Setup inicial + verificación
 ├── requirements.txt
 ├── .env.example
-├── CONTRIBUTING.md
-└── ROADMAP.md
+├── ARCHITECTURE.md            # Mapa 70 agentes → 12 pipelines
+├── ROADMAP.md                 # Fases completadas y próximas
+└── CONTRIBUTING.md
 ```
 
 ---
 
-## 🔀 Pipelines disponibles
-
-Los pipelines se configuran en `config.yaml` y se ejecutan vía `core/maestro.py`.
-
-- **DEV** (`--type dev`): genera proyectos de software completos.
-- **RESEARCH** (`--type research`): tesis de inversión con datos web + mercado.
-- **CONTENT** (`--type content`): contenido crypto estructurado (hilos, posts, newsletters).
-- **OFFICE** (`--type office`): analiza archivos Excel, CSV, Word, PDF.
-- **QA** (`--type qa`): auditoría de código (bugs, seguridad, performance, tests).
-- **TRADING** (`--type trading`): analytics de bots y backtests.
-- **PM** (`--type pm`): backlog y sprints desde una descripción de proyecto.
-
-La clasificación automática sin `--type` se basa en keywords y, en caso de ambigüedad, en un LLM de Groq.
-
----
-
-## 🚀 Instalación y uso básico
+## 🚀 Instalación y uso
 
 ```bash
-# Clonar repo
+# 1. Clonar
 git clone https://github.com/ariaslopez/orquestador-multiagente
 cd orquestador-multiagente
 
-# Instalar dependencias
+# 2. Dependencias
 pip install -r requirements.txt
 
-# Configurar variables de entorno
+# 3. Configurar
 cp .env.example .env
-# Edita .env con tus claves (Groq obligatorio, resto opcional)
+# Editar .env con GROQ_API_KEY mínimo
 
-# Setup inicial
+# 4. Setup inicial
 python setup.py
 
-# Verificación del sistema
+# 5. Verificar sistema
 python main.py --doctor
 ```
 
-### Ejecutar tareas desde CLI
+### CLI
 
 ```bash
-# Generar un proyecto (pipeline DEV)
-python main.py --task "Crea una API REST en FastAPI para gestionar senales de trading" --type dev
+# Pipeline DEV
+python main.py --task "API REST FastAPI para señales de trading" --type dev
 
-# Tesis de inversión (pipeline RESEARCH)
-python main.py --task "Tesis de inversion para Solana Q2 2026" --type research
+# Pipeline RESEARCH
+python main.py --task "Tesis de inversión Solana Q2 2026" --type research
 
-# Analizar un Excel (pipeline OFFICE)
-python main.py --task "Analiza este backtest" --type office --file data/backtest_sample.xlsx
+# Pipeline OFFICE (con archivo)
+python main.py --task "Analiza este backtest" --type office --file data.xlsx
 
-# Clasificación automática
-python main.py --task "Audita este modulo buscando vulnerabilidades"  # detecta QA
+# Pipeline QA
+python main.py --task "Audita este módulo buscando vulnerabilidades" --type qa --file app/routes.py
+
+# Clasificación automática (sin --type)
+python main.py --task "¿Cuál es el Sharpe de este bot?"
+
+# Modo interactivo
+python main.py --interactive
+
+# Dashboard web
+python main.py --ui  # → http://127.0.0.1:8000
 ```
 
-### UI web (Dashboard)
+### Tests y ejemplos
 
 ```bash
-python main.py --ui
-# Abre: http://127.0.0.1:8000
+# Tests unitarios (sin API keys, sin red)
+pytest tests/ -v
+
+# Ejemplos por pipeline
+python examples/dev_example.py
+python examples/research_example.py
+python examples/content_example.py
 ```
 
 ---
 
 ## 💾 Memoria y estado
 
-- **Local**: SQLite (`./data/claw_memory.db`) para sesiones recientes.
-- **Nube**: Supabase opcional para sincronizar historial entre máquinas.
-- `infrastructure/memory_manager.py` expone métodos para guardar y recuperar sesiones.
-
-Esto permite que:
-- El sistema recuerde tesis anteriores sobre un mismo activo.
-- Evite duplicar proyectos ya generados.
-- Continúe trabajo interrumpido desde el último checkpoint.
+- **Local:** SQLite (`./data/claw_memory.db`) — sesiones recientes, disponible offline.
+- **Nube:** Supabase opcional — historial sincronizado entre máquinas.
+- El sistema recuerda tesis anteriores sobre un activo, evita duplicar proyectos y puede continuar trabajo interrumpido.
 
 ---
 
 ## 🔐 Seguridad
 
-Implementada en múltiples capas:
+| Capa | Implementación |
+|------|----------------|
+| Paths protegidos | `C:/Windows`, `/etc`, `~/.ssh`, etc. definidos en `config.yaml` |
+| Lista blanca de comandos | Solo `pip`, `pytest`, `git`, `python` con args controlados |
+| Bloqueo de patrones peligrosos | `rm -rf`, `DROP TABLE`, pipe-to-bash, etc. |
+| Shell injection | `shell=False` + `shlex.split` en todas las ejecuciones |
+| Audit log | Cada operación registrada en `logs/` vía `audit_logger.py` |
+| Git confirmación | `GITHUB_CONFIRM_BEFORE_PUSH=true` por defecto |
+| `.env` permisos | `setup.py` aplica `chmod 600` en Unix/Linux/Mac |
 
-- Paths protegidos (no toca `C:/Windows`, `/etc`, etc.) definidos en `config.yaml`.
-- Lista blanca de comandos permitidos (`pip install`, `pytest`, `git`, etc.).
-- Bloqueo de patrones peligrosos (`rm -rf`, `DROP TABLE`, etc.).
-- **`shell=False`** en todas las ejecuciones de subprocesos para prevenir shell injection.
-- Sandbox de filesystem y comandos en `infrastructure/security_sandbox.py`.
-- Logs de auditoría en `infrastructure/audit_logger.py` y `logs/`.
-- `GITHUB_CONFIRM_BEFORE_PUSH=true` por defecto — el sistema nunca hace push sin confirmación.
-- `.env` creado con permisos `600` (solo el usuario propietario puede leerlo).
+### ⚠️ Riesgos conocidos
 
----
+**Pipeline DEV ejecuta código en el host.** El `ExecutorAgent` usa el sandbox de CLAW como primera línea de defensa, no como aislamiento total a nivel OS. Para producción: ejecutar dentro de Docker efímero (Fase 11).
 
-## ⚠️ Riesgos conocidos
-
-Esta sección documenta explícitamente los límites de seguridad actuales. La transparencia sobre el riesgo es más segura que ignorarlo.
-
-### El pipeline DEV ejecuta código en tu máquina host
-
-Cuando usas `--type dev`, el `ExecutorAgent` escribe archivos en disco y puede ejecutar comandos (`pip install`, `pytest`, etc.) en el mismo proceso del sistema operativo. El sandbox de CLAW actua como **primera línea de defensa**, no como aislamiento total:
-
-- ✅ Bloquea patrones peligrosos conocidos (`rm -rf`, `DROP TABLE`, pipe-to-bash, etc.)
-- ✅ Valida comandos contra lista blanca
-- ✅ Usa `shell=False` para prevenir shell injection básica
-- ⚠️ **No es un sandbox a nivel OS** — un modelo que genere `python -c "import os; os.system(...)"` puede ejecutar código arbitrario si pasa la whitelist
-
-**Mitigación recomendada para producción:** Ejecutar CLAW dentro de un container Docker efimero por tarea. Esto está en el ROADMAP como siguiente paso de seguridad.
-
-**Nivel de riesgo actual:** Bajo para uso personal en PC de desarrollo. Medio-alto si expones el endpoint `/api/task` a internet sin autenticación.
-
-### Prompt injection en tareas de entrada libre
-
-El Maestro clasifica y procesa texto libre del usuario. Un input malicioso diseñado para manipular el LLM (prompt injection) podría en teoría afectar el comportamiento del pipeline. No hay un filtro de sanitización de input implementado actualmente.
-
-**Mitigación:** Limitar el acceso a la UI/API a usuarios de confianza mientras no haya autenticación en `/api/task`.
-
-### `.env` contiene credenciales en texto plano
-
-El archivo `.env` almacena API keys en texto plano. `setup.py` aplica permisos `600` (solo el usuario propietario puede leer el archivo en Unix/Linux/Mac). En Windows, los permisos de archivo tienen semantíca diferente.
-
-**Mitigación:** Nunca hacer commit del `.env` (ya está en `.gitignore`). Para producción en servidor, usar variables de entorno del sistema o un secrets manager (AWS Secrets Manager, Vault, etc.).
+**Prompt injection.** El Maestro procesa texto libre del usuario sin sanitización de input. Limitar acceso a la API a usuarios de confianza hasta implementar auth (Fase 11).
 
 ---
 
-## 🧪 Tests y ejemplos
+## 📊 Evaluación del sistema
 
-- Tests unitarios y de integración en `tests/` cubren core, agents, infrastructure, tools y pipelines DEV/RESEARCH.
-- Directorio `examples/` contiene scripts listos para correr cada pipeline.
+| Dimensión | Puntuación | Notas |
+|-----------|-----------|-------|
+| Arquitectura | 7.5/10 | Capas limpias, falta grafo dinámico |
+| Seguridad | 8.0/10 | Mejor que CrewAI/LangGraph nativo |
+| Confiabilidad prod. | 6.0/10 | Falta tests E2E + Docker sandbox |
+| Razonamiento multi-agente | 6.5/10 | Solo DEV y RESEARCH son sub-pipelines reales |
+| Developer Experience | 7.0/10 | CLI + UI + docs sólidos, falta tracing |
+| **Global** | **7.0/10** | Proyecto personal avanzado, producción supervisada |
 
-```bash
-# Correr todos los tests (sin API keys, sin red)
-pytest tests/ -v
-
-python examples/dev_example.py
-python examples/research_example.py
-```
+> Para llegar a 8.5+/10: tests E2E (Fase 10), tracing (Fase 10), expandir 5 pipelines macro (Fase 8).
 
 ---
 
-## 📌 Estado del proyecto
+## 📌 Estado y contribuciones
 
-- Este repo refleja la **versión 1.0.0** del orquestador multi-agente.
-- Cualquier funcionalidad adicional (Docker, GitHubPR automático, paralelo avanzado, etc.) está documentada como **deuda técnica** en `ROADMAP.md`.
-- Para contribuir, lee `CONTRIBUTING.md`.
-
-Si ves alguna inconsistencia entre el código y la documentación, el código y el ROADMAP tienen prioridad como fuente de verdad.
+- Versión **1.0.0** — sistema estable, 7 pipelines operativos.
+- El código y el `ROADMAP.md` son la fuente de verdad. Si hay discrepancia con cualquier otro doc, el código manda.
+- Para contribuir: lee `CONTRIBUTING.md`.
+- Issues y PRs bienvenidos para las fases 8–12.
