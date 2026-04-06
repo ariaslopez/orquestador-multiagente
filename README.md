@@ -144,7 +144,7 @@ orquestador-multiagente/
 │   ├── qa_example.py
 │   ├── trading_example.py
 │   └── pm_example.py
-├── tests/                   # Tests unitarios básicos
+├── tests/                   # Tests unitarios + integración
 ├── config.yaml              # Configuración global y pipelines
 ├── main.py                  # Punto de entrada CLI
 ├── requirements.txt
@@ -215,11 +215,6 @@ python main.py --ui
 # Abre: http://127.0.0.1:8000
 ```
 
-El dashboard permite:
-- Escribir una tarea en lenguaje natural.
-- Seleccionar un pipeline (o dejar auto).
-- Ver el output, tokens y costo estimado.
-
 ---
 
 ## 💾 Memoria y estado
@@ -246,18 +241,52 @@ Implementada en múltiples capas:
 - Sandbox de filesystem y comandos en `infrastructure/security_sandbox.py`.
 - Logs de auditoría en `infrastructure/audit_logger.py` y `logs/`.
 - `GITHUB_CONFIRM_BEFORE_PUSH=true` por defecto — el sistema nunca hace push sin confirmación.
+- `.env` creado con permisos `600` (solo el usuario propietario puede leerlo).
+
+---
+
+## ⚠️ Riesgos conocidos
+
+Esta sección documenta explícitamente los límites de seguridad actuales. La transparencia sobre el riesgo es más segura que ignorarlo.
+
+### El pipeline DEV ejecuta código en tu máquina host
+
+Cuando usas `--type dev`, el `ExecutorAgent` escribe archivos en disco y puede ejecutar comandos (`pip install`, `pytest`, etc.) en el mismo proceso del sistema operativo. El sandbox de CLAW actua como **primera línea de defensa**, no como aislamiento total:
+
+- ✅ Bloquea patrones peligrosos conocidos (`rm -rf`, `DROP TABLE`, pipe-to-bash, etc.)
+- ✅ Valida comandos contra lista blanca
+- ✅ Usa `shell=False` para prevenir shell injection básica
+- ⚠️ **No es un sandbox a nivel OS** — un modelo que genere `python -c "import os; os.system(...)"` puede ejecutar código arbitrario si pasa la whitelist
+
+**Mitigación recomendada para producción:** Ejecutar CLAW dentro de un container Docker efimero por tarea. Esto está en el ROADMAP como siguiente paso de seguridad.
+
+**Nivel de riesgo actual:** Bajo para uso personal en PC de desarrollo. Medio-alto si expones el endpoint `/api/task` a internet sin autenticación.
+
+### Prompt injection en tareas de entrada libre
+
+El Maestro clasifica y procesa texto libre del usuario. Un input malicioso diseñado para manipular el LLM (prompt injection) podría en teoría afectar el comportamiento del pipeline. No hay un filtro de sanitización de input implementado actualmente.
+
+**Mitigación:** Limitar el acceso a la UI/API a usuarios de confianza mientras no haya autenticación en `/api/task`.
+
+### `.env` contiene credenciales en texto plano
+
+El archivo `.env` almacena API keys en texto plano. `setup.py` aplica permisos `600` (solo el usuario propietario puede leer el archivo en Unix/Linux/Mac). En Windows, los permisos de archivo tienen semantíca diferente.
+
+**Mitigación:** Nunca hacer commit del `.env` (ya está en `.gitignore`). Para producción en servidor, usar variables de entorno del sistema o un secrets manager (AWS Secrets Manager, Vault, etc.).
 
 ---
 
 ## 🧪 Tests y ejemplos
 
-- Tests unitarios básicos en `tests/` cubren core, agents, infrastructure y tools.
+- Tests unitarios y de integración en `tests/` cubren core, agents, infrastructure, tools y pipelines DEV/RESEARCH.
 - Directorio `examples/` contiene scripts listos para correr cada pipeline.
 
 ```bash
+# Correr todos los tests (sin API keys, sin red)
+pytest tests/ -v
+
 python examples/dev_example.py
 python examples/research_example.py
-python examples/content_example.py
 ```
 
 ---

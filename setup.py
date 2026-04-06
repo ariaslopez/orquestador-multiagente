@@ -1,6 +1,7 @@
 """CLAW Agent System — Instalador interactivo."""
 import os
 import sys
+import stat
 import subprocess
 from pathlib import Path
 
@@ -186,7 +187,14 @@ AGENT_VERBOSE_LOGS=false
     with open(".env", "w", encoding="utf-8") as f:
         f.write(env_content)
 
-    print("   ✅ Archivo .env creado")
+    # Restringir permisos del .env a solo el usuario actual (Unix/Linux/Mac)
+    # En Windows os.chmod es un no-op para permisos de lectura de otros usuarios,
+    # pero no lanza excepcion — se ejecuta de forma segura en todos los OS.
+    try:
+        os.chmod(".env", stat.S_IRUSR | stat.S_IWUSR)  # 0o600 — solo owner
+        print("   ✅ Archivo .env creado (permisos: 600 — solo tu usuario)")
+    except Exception:
+        print("   ✅ Archivo .env creado")
 
     # ----------------------------------------------------------------
     # FINALIZAR
