@@ -59,12 +59,15 @@ class BaseAgent(ABC):
 
         Infiere el task_type a partir del nombre del agente para que
         APIRouter aplique el routing correcto (reasoning vs fast).
+
+        Desempaca el tuple (text, tokens) de APIRouter.complete() y
+        actualiza las métricas del contexto automáticamente.
         """
         if self._api_router is None:
             from .api_router import APIRouter
             BaseAgent._api_router = APIRouter()
 
-        # Mapear nombre de agente a task_type del APIRouter
+        # Mapear nombre de agente → task_type del APIRouter
         name_lower = self.name.lower()
         if any(k in name_lower for k in ("planner", "architect")):
             task_type = "planning"
@@ -82,15 +85,20 @@ class BaseAgent(ABC):
             task_type = "reasoning"
 
         messages = [{"role": "user", "content": prompt}]
-        result = await self._api_router.complete(
+        text, tokens = await self._api_router.complete(
             messages=messages,
             task_type=task_type,
             system=system,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        ctx.add_tokens(0)  # tokens se actualizarán cuando APIRouter los reporte
-        return result
+
+        # Actualizar métricas reales en el contexto
+        api_used = self._api_router.select_api(task_type)
+        cost = self._api_router.cost_for_tokens(tokens, api_used)
+        ctx.add_tokens(tokens, cost=cost, api=api_used)
+
+        return text
 
     def log(self, ctx: AgentContext, message: str) -> None:
         """Helper para loguear en el contexto y en el logger estándar."""

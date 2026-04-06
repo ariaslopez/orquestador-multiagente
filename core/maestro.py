@@ -110,7 +110,8 @@ Tarea: "{user_input}"
 
 Responde SOLO con la categoría, sin explicación."""
 
-        result = await self.api_router.complete(
+        # complete() retorna (text, tokens) — solo usamos el texto aquí
+        result, _ = await self.api_router.complete(
             messages=[{"role": "user", "content": prompt}],
             task_type="classification",
             temperature=0.1,
