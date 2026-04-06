@@ -1,11 +1,11 @@
 # ============================================
-# CLAW Agent System — Configuración Global
+# CLAW Agent System — Configuracion Global
 # ============================================
 
 app:
   name: "CLAW Agent System"
-  version: "1.0.0"
-  description: "Orquestador autónomo multi-agente con 7 pipelines especializados"
+  version: "2.0.0"
+  description: "Orquestador autonomo multi-agente con 12 pipelines especializados"
 
 # --------------------------------------------
 # PERFILES DE AMBIENTE
@@ -22,7 +22,7 @@ environments:
     gemini_model: gemini-2.0-flash
 
   server:
-    description: "Servidor cloud / Windows Server / producción"
+    description: "Servidor cloud / Windows Server / produccion"
     max_concurrent_tasks: 3
     memory_backend: supabase
     log_level: WARNING
@@ -45,7 +45,7 @@ pipelines:
 
   research:
     name: "Research Engine"
-    description: "Tesis de inversión con datos web + locales"
+    description: "Tesis de inversion con datos web + locales"
     agents: [web_scout, data, analyst, thesis]
     mode: parallel_then_sequential
     parallel_agents: [web_scout, data]
@@ -54,36 +54,36 @@ pipelines:
 
   content:
     name: "Content Generator"
-    description: "Contenido crypto con personalidades configurables"
-    agents: [content]
+    description: "Contenido crypto con pipeline editorial completo"
+    agents: [topic, writer, editor, brand, scheduler]
     mode: sequential
     enabled: true
 
   office:
     name: "Office Pipeline"
-    description: "Analiza Excel, Word, PDF, PowerPoint"
-    agents: [office]
+    description: "Analiza Excel, Word, PDF, PowerPoint con reporte ejecutivo"
+    agents: [file_reader, data_analyzer, report_writer]
     mode: sequential
     enabled: true
 
   qa:
     name: "QA Pipeline"
-    description: "Audita y valida código existente"
-    agents: [qa]
+    description: "Auditoria completa: estatica, bugs, seguridad, performance y tests"
+    agents: [static_analyzer, bug_hunter, security_reviewer, performance_profiler, test_generator]
     mode: sequential
     enabled: true
 
   pm:
     name: "PM Pipeline"
-    description: "Convierte descripciones en backlog estructurado"
-    agents: [pm]
+    description: "Convierte descripciones en backlog, sprints y roadmap completo"
+    agents: [requirements_parser, backlog_builder, sprint_planner, roadmap_generator]
     mode: sequential
     enabled: true
 
   trading:
     name: "Trading Analytics"
-    description: "Analiza performance de bots y estrategias"
-    agents: [trading]
+    description: "Analiza bots y estrategias: metricas, riesgo y recomendaciones"
+    agents: [backtest_reader, metrics_calculator, risk_analyzer, strategy_advisor]
     mode: sequential
     enabled: true
 

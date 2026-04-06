@@ -15,15 +15,15 @@ class Maestro:
     El Maestro es el orquestador central del sistema CLAW.
 
     Responsabilidades:
-    1. Clasificar la tarea del usuario (qué tipo de pipeline usar)
-    2. Consultar la memoria (¿ya existe algo similar?)
+    1. Clasificar la tarea del usuario (que tipo de pipeline usar)
+    2. Consultar la memoria (ya existe algo similar?)
     3. Construir el pipeline de agentes correcto
-    4. Ejecutar el pipeline vía PipelineRouter
+    4. Ejecutar el pipeline via PipelineRouter
     5. Guardar resultados en memoria
     6. Reportar al usuario
     """
 
-    # Keywords para clasificación de tareas
+    # Keywords para clasificacion de tareas
     TASK_KEYWORDS = {
         "dev": [
             "crea", "construye", "desarrolla", "implementa", "programa",
@@ -31,8 +31,8 @@ class Maestro:
             "create", "build", "develop", "implement",
         ],
         "research": [
-            "investiga", "analiza", "tesis", "research", "análisis",
-            "comparativa", "estudio", "evalúa", "tendencia", "mercado",
+            "investiga", "analiza", "tesis", "research", "analisis",
+            "comparativa", "estudio", "evalua", "tendencia", "mercado",
             "bitcoin", "ethereum", "crypto", "token", "defi", "nft",
         ],
         "content": [
@@ -49,12 +49,12 @@ class Maestro:
         ],
         "pm": [
             "planifica", "backlog", "sprint", "tareas", "roadmap",
-            "épicas", "estimación", "plan", "project",
+            "epicas", "estimacion", "plan", "project",
         ],
         "trading": [
             "bot de trading", "log", "backtest", "estrategia",
             "performance", "win rate", "drawdown", "sharpe",
-            "señal", "trading",
+            "senal", "trading",
         ],
     }
 
@@ -72,7 +72,7 @@ class Maestro:
     def classify_task(self, user_input: str) -> str:
         """
         Clasifica la tarea del usuario y retorna el tipo de pipeline.
-        Usa keyword matching primero; si hay ambigüedad, consulta el LLM.
+        Usa keyword matching primero; si hay ambiguedad, consulta el LLM.
         """
         lower = user_input.lower()
         scores: Dict[str, int] = {task: 0 for task in self.TASK_KEYWORDS}
@@ -86,31 +86,31 @@ class Maestro:
         best_score = scores[best_task]
 
         if best_score == 0:
-            logger.info("Clasificación: sin keywords claras, usando 'dev' por defecto")
+            logger.info("Clasificacion: sin keywords claras, usando 'dev' por defecto")
             return "dev"
 
-        logger.info(f"Clasificación: '{best_task}' (score={best_score})")
+        logger.info(f"Clasificacion: '{best_task}' (score={best_score})")
         return best_task
 
     async def classify_task_with_llm(self, user_input: str) -> str:
         """
-        Versión mejorada: usa el LLM para clasificar con mejor precisión.
-        Úsala cuando el keyword matching sea ambiguo.
+        Version mejorada: usa el LLM para clasificar con mejor precision.
+        Usala cuando el keyword matching sea ambiguo.
         """
-        prompt = f"""Clasifica esta tarea en UNA de estas categorías:
+        prompt = f"""Clasifica esta tarea en UNA de estas categorias:
 - dev: crear software, bots, APIs, scripts
-- research: análisis, tesis, investigación de activos crypto
+- research: analisis, tesis, investigacion de activos crypto
 - content: generar contenido para redes sociales, blogs
 - office: analizar archivos Excel, Word, PDF, PowerPoint
-- qa: auditar, revisar, validar código
+- qa: auditar, revisar, validar codigo
 - pm: planificar proyectos, crear backlog
 - trading: analizar bots de trading, logs, backtests
 
 Tarea: "{user_input}"
 
-Responde SOLO con la categoría, sin explicación."""
+Responde SOLO con la categoria, sin explicacion."""
 
-        # complete() retorna (text, tokens) — solo usamos el texto aquí
+        # complete() retorna (text, tokens) — solo usamos el texto aqui
         result, _ = await self.api_router.complete(
             messages=[{"role": "user", "content": prompt}],
             task_type="classification",
@@ -147,7 +147,7 @@ Responde SOLO con la categoría, sin explicación."""
             ctx.task_type = task_type
         else:
             ctx.task_type = self.classify_task(user_input)
-            # Si la clasificación es ambigua, verificar con LLM
+            # Si la clasificacion es ambigua, verificar con LLM
             if ctx.task_type == "dev" and not any(
                 kw in user_input.lower() for kw in self.TASK_KEYWORDS["dev"]
             ):
@@ -159,7 +159,7 @@ Responde SOLO con la categoría, sin explicación."""
         logger.info(f"Maestro.run() | task_type={ctx.task_type} | session={ctx.session_id[:8]}")
         ctx.log("maestro", f"Tarea clasificada como: {ctx.task_type}")
 
-        # Consultar memoria — ¿existe trabajo previo similar?
+        # Consultar memoria — existe trabajo previo similar?
         if self.memory:
             similar = await self.memory.find_similar(user_input, ctx.task_type)
             if similar:
@@ -170,12 +170,12 @@ Responde SOLO con la categoría, sin explicación."""
         try:
             ctx = await self._execute_pipeline(ctx)
             ctx.finish("completed")
-            ctx.log("maestro", f"✅ Pipeline completado en {ctx.duration_seconds:.1f}s")
+            ctx.log("maestro", f"Pipeline completado en {ctx.duration_seconds:.1f}s")
         except Exception as e:
             ctx.error = str(e)
             ctx.finish("failed")
-            ctx.log("maestro", f"💥 Pipeline falló: {e}")
-            logger.error(f"Maestro: pipeline falló: {e}")
+            ctx.log("maestro", f"Pipeline fallo: {e}")
+            logger.error(f"Maestro: pipeline fallo: {e}")
 
         # Guardar en memoria
         if self.memory:
@@ -244,31 +244,73 @@ Responde SOLO con la categoría, sin explicación."""
         return sequential, parallel, "parallel_then_sequential"
 
     def _build_content_pipeline(self):
-        from agents.content_agent import ContentAgent
+        from agents.content.topic_agent import TopicAgent
+        from agents.content.writer_agent import WriterAgent
+        from agents.content.editor_agent import EditorAgent
+        from agents.content.brand_agent import BrandAgent
+        from agents.content.scheduler_agent import SchedulerAgent
 
-        agents = [ContentAgent()]
+        agents = [
+            TopicAgent(),
+            WriterAgent(),
+            EditorAgent(),
+            BrandAgent(),
+            SchedulerAgent(),
+        ]
         return agents, [], "sequential"
 
     def _build_office_pipeline(self):
-        from agents.office_agent import OfficeAgent
+        from agents.office.file_reader import FileReaderAgent
+        from agents.office.data_analyzer import DataAnalyzerAgent
+        from agents.office.report_writer import ReportWriterAgent
 
-        agents = [OfficeAgent()]
+        agents = [
+            FileReaderAgent(),
+            DataAnalyzerAgent(),
+            ReportWriterAgent(),
+        ]
         return agents, [], "sequential"
 
     def _build_qa_pipeline(self):
-        from agents.qa_agent import QAAgent
+        from agents.qa.static_analyzer import StaticAnalyzerAgent
+        from agents.qa.bug_hunter import BugHunterAgent
+        from agents.qa.security_reviewer import SecurityReviewerAgent
+        from agents.qa.performance_profiler import PerformanceProfilerAgent
+        from agents.qa.test_generator import TestGeneratorAgent
 
-        agents = [QAAgent()]
+        agents = [
+            StaticAnalyzerAgent(),
+            BugHunterAgent(),
+            SecurityReviewerAgent(),
+            PerformanceProfilerAgent(),
+            TestGeneratorAgent(),
+        ]
         return agents, [], "sequential"
 
     def _build_pm_pipeline(self):
-        from agents.pm_agent import PMAgent
+        from agents.pm.requirements_parser import RequirementsParserAgent
+        from agents.pm.backlog_builder import BacklogBuilderAgent
+        from agents.pm.sprint_planner import SprintPlannerAgent
+        from agents.pm.roadmap_generator import RoadmapGeneratorAgent
 
-        agents = [PMAgent()]
+        agents = [
+            RequirementsParserAgent(),
+            BacklogBuilderAgent(),
+            SprintPlannerAgent(),
+            RoadmapGeneratorAgent(),
+        ]
         return agents, [], "sequential"
 
     def _build_trading_pipeline(self):
-        from agents.trading_agent import TradingAnalyticsAgent
+        from agents.trading.backtest_reader import BacktestReaderAgent
+        from agents.trading.metrics_calculator import MetricsCalculatorAgent
+        from agents.trading.risk_analyzer import RiskAnalyzerAgent
+        from agents.trading.strategy_advisor import StrategyAdvisorAgent
 
-        agents = [TradingAnalyticsAgent()]
+        agents = [
+            BacktestReaderAgent(),
+            MetricsCalculatorAgent(),
+            RiskAnalyzerAgent(),
+            StrategyAdvisorAgent(),
+        ]
         return agents, [], "sequential"
