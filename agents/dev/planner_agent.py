@@ -34,9 +34,15 @@ Devuelve SOLO JSON con esta estructura:
         try:
             plan = json.loads(self._extract_json(response))
         except Exception:
-            plan = {"project_name": "project", "files": [], "stack": [], "install_commands": [], "run_command": "python main.py"}
-        context.plan = plan
-        context.pipeline_name = "DEV"
+            plan = {
+                "project_name": "project",
+                "files": [],
+                "stack": [],
+                "install_commands": [],
+                "run_command": "python main.py",
+            }
+        context.set_data('plan', plan)
+        context.set_data('pipeline_name', 'DEV')
         self.log(context, f"Plan generado: {len(plan.get('files', []))} archivos, stack: {plan.get('stack', [])}")
         return context
 

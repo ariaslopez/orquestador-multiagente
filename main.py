@@ -3,6 +3,7 @@ import os
 import sys
 import asyncio
 import argparse
+import subprocess
 import webbrowser
 from pathlib import Path
 from dotenv import load_dotenv
@@ -15,12 +16,12 @@ def check_setup() -> bool:
     """Verifica que el sistema está configurado. Si no, ejecuta setup."""
     env_file = Path(".env")
     if not env_file.exists():
-        print("\n⚠ï¸  No se encontró el archivo .env")
+        print("\n⚠️  No se encontró el archivo .env")
         print("   Ejecuta primero: python setup.py\n")
         return False
     groq_key = os.getenv("GROQ_API_KEY", "")
     if not groq_key or groq_key == "your_groq_api_key_here":
-        print("\n⚠ï¸  GROQ_API_KEY no configurada en .env")
+        print("\n⚠️  GROQ_API_KEY no configurada en .env")
         print("   Ejecuta: python setup.py\n")
         return False
     return True
@@ -31,7 +32,7 @@ def run_doctor() -> None:
     from rich.console import Console
     from rich.table import Table
     console = Console()
-    console.print("\n[bold cyan]👨‍⚕ï¸  CLAW Doctor — Verificando sistema...[/bold cyan]\n")
+    console.print("\n[bold cyan]👨‍⚕️  CLAW Doctor — Verificando sistema...[/bold cyan]\n")
 
     checks = []
 
@@ -72,7 +73,7 @@ def run_doctor() -> None:
     if all_ok:
         console.print("\n[bold green]✅ Todo en orden — el sistema está listo para usar.[/bold green]\n")
     else:
-        console.print("\n[bold yellow]⚠ï¸  Algunos componentes necesitan atención. Revisa los ❌ arriba.[/bold yellow]\n")
+        console.print("\n[bold yellow]⚠️  Algunos componentes necesitan atención. Revisa los ❌ arriba.[/bold yellow]\n")
 
 
 async def run_task(
@@ -120,7 +121,7 @@ async def run_task(
     ))
 
     # Mostrar métricas
-    console.print(f"\n[dim]⏱ï¸  {ctx.duration_seconds:.1f}s  |  🔢 {ctx.total_tokens:,} tokens  |  💰 ${ctx.estimated_cost_usd:.4f} USD  |  💾 Sesion: {ctx.session_id[:8]}[/dim]")
+    console.print(f"\n[dim]⏱️  {ctx.duration_seconds:.1f}s  |  🔢 {ctx.total_tokens:,} tokens  |  💰 ${ctx.estimated_cost_usd:.4f} USD  |  💾 Sesion: {ctx.session_id[:8]}[/dim]")
 
     if ctx.output_path:
         console.print(f"[dim]📁 Output guardado en: {ctx.output_path}[/dim]\n")
@@ -218,13 +219,14 @@ Ejemplos:
 
     # Acciones que no requieren setup
     if args.version:
-        print("CLAW Agent System v2.0.0")
+        print("CLAW Agent System v1.0.0")
         return
     if args.doctor:
         run_doctor()
         return
     if args.setup:
-        os.system("python setup.py")
+        # shell=False: usa el intérprete correcto sin expansión de shell
+        subprocess.run([sys.executable, 'setup.py'], check=False)
         return
 
     # Verificar setup para el resto de acciones

@@ -18,7 +18,7 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         print("Falta fastapi/uvicorn: pip install fastapi uvicorn")
         return
 
-    app = FastAPI(title="CLAW Agent System", version="2.0.0")
+    app = FastAPI(title="CLAW Agent System", version="1.0.0")
 
     class TaskRequest(BaseModel):
         task: str
@@ -106,7 +106,7 @@ FALLBACK_HTML = """
 <body class="bg-gray-900 text-white min-h-screen p-6">
     <div class="max-w-4xl mx-auto">
         <h1 class="text-3xl font-bold text-cyan-400 mb-2">CLAW Agent System</h1>
-        <p class="text-gray-400 mb-6">Orquestador autonomo multi-agente v2.0</p>
+        <p class="text-gray-400 mb-6">Orquestador autonomo multi-agente v1.0</p>
 
         <div class="bg-gray-800 rounded-lg p-4 mb-4">
             <textarea id="task" class="w-full bg-gray-700 text-white rounded p-3 mb-3 h-24 resize-none"

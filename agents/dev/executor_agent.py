@@ -1,12 +1,10 @@
 """ExecutorAgent — Escribe los archivos en disco e instala dependencias."""
 from __future__ import annotations
-import os
 import subprocess
+import sys
 from pathlib import Path
 from core.base_agent import BaseAgent
 from core.context import AgentContext
-
-ALLOWED_COMMANDS = ['pip install', 'npm install', 'yarn install', 'cargo build', 'go mod tidy']
 
 
 class ExecutorAgent(BaseAgent):
@@ -14,8 +12,8 @@ class ExecutorAgent(BaseAgent):
     description = "Escribe los archivos en disco e instala las dependencias del proyecto."
 
     async def run(self, context: AgentContext) -> AgentContext:
-        generated = getattr(context, 'generated_files', {})
-        plan = getattr(context, 'plan', {})
+        generated = context.get_data('generated_files') or {}
+        plan = context.get_data('plan') or {}
         output_dir = Path(context.output_path or f"output/{plan.get('project_name', 'project')}")
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -33,8 +31,11 @@ class ExecutorAgent(BaseAgent):
             self.log(context, "Instalando dependencias...")
             try:
                 result = subprocess.run(
-                    ['pip', 'install', '-r', str(req_file)],
-                    capture_output=True, text=True, timeout=120
+                    [sys.executable, '-m', 'pip', 'install', '-r', str(req_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    shell=False,
                 )
                 if result.returncode == 0:
                     self.log(context, "✅ Dependencias instaladas")
@@ -45,7 +46,7 @@ class ExecutorAgent(BaseAgent):
             except Exception as e:
                 self.log(context, f"⚠ Error instalando: {e}")
 
-        context.files_written = written
+        context.set_data('files_written', written)
         context.final_output = (
             f"Proyecto generado en: {output_dir}\n"
             f"Archivos: {len(written)}\n"

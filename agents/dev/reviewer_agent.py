@@ -9,7 +9,7 @@ class ReviewerAgent(BaseAgent):
     description = "Detecta bugs, errores de logica y mejoras en el codigo generado."
 
     async def run(self, context: AgentContext) -> AgentContext:
-        generated = getattr(context, 'generated_files', {})
+        generated = context.get_data('generated_files') or {}
         if not generated:
             return context
 
@@ -42,8 +42,8 @@ Si hay problemas, devuelve el codigo corregido completo (sin explicaciones, solo
                 issues_found.append(file_path)
                 self.log(context, f"  {file_path}: CORREGIDO")
 
-        context.generated_files = corrected_files
-        context.review_issues = issues_found
+        context.set_data('generated_files', corrected_files)
+        context.set_data('review_issues', issues_found)
         self.log(context, f"Review completo. Corregidos: {len(issues_found)} archivos")
         return context
 

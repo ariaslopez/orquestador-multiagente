@@ -1,6 +1,5 @@
 """CoderAgent — Genera el codigo de cada archivo del plan."""
 from __future__ import annotations
-import os
 from pathlib import Path
 from core.base_agent import BaseAgent
 from core.context import AgentContext
@@ -11,14 +10,14 @@ class CoderAgent(BaseAgent):
     description = "Genera el contenido real de cada archivo del proyecto."
 
     async def run(self, context: AgentContext) -> AgentContext:
-        plan = getattr(context, 'plan', {})
+        plan = context.get_data('plan') or {}
         files = plan.get('files', [])
         if not files:
             self.log(context, "No hay archivos en el plan.")
             return context
 
         output_dir = Path(context.output_path or f"output/{plan.get('project_name', 'project')}")
-        context.generated_files = {}
+        generated_files = {}
 
         for file_info in sorted(files, key=lambda x: x.get('priority', 99)):
             file_path = file_info['path']
@@ -37,11 +36,12 @@ Reglas:
 - Solo el codigo, sin explicaciones adicionales"""
             code = await self.llm(context, prompt, temperature=0.2)
             code = self._clean_code(code)
-            context.generated_files[file_path] = code
+            generated_files[file_path] = code
             self.log(context, f"  {file_path} generado ({len(code)} chars)")
 
+        context.set_data('generated_files', generated_files)
         context.output_path = str(output_dir)
-        self.log(context, f"Total: {len(context.generated_files)} archivos generados")
+        self.log(context, f"Total: {len(generated_files)} archivos generados")
         return context
 
     def _clean_code(self, text: str) -> str:
