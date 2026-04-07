@@ -1,7 +1,6 @@
 """Dashboard web del CLAW Agent System via FastAPI."""
 from __future__ import annotations
 import asyncio
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +10,7 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         import uvicorn
         from fastapi import FastAPI, HTTPException
         from fastapi.responses import HTMLResponse
-        from pydantic import BaseModel
+        from pydantic import BaseModel, field_validator
     except ImportError:
         print("Falta fastapi/uvicorn: pip install fastapi uvicorn")
         return
@@ -23,6 +22,14 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         task_type: Optional[str] = None
         input_file: Optional[str] = None
         auto: bool = True
+
+        @field_validator('task_type', 'input_file', mode='before')
+        @classmethod
+        def empty_str_to_none(cls, v):
+            """Convierte string vacio a None — el select HTML envia '' cuando no hay seleccion."""
+            if isinstance(v, str) and v.strip() == '':
+                return None
+            return v
 
     @app.get('/', response_class=HTMLResponse)
     async def index():
@@ -41,7 +48,6 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         from infrastructure.memory_manager import MemoryManager
         from core.maestro import Maestro
 
-        # assert_safe es sincrono — run_in_executor para no bloquear uvicorn
         loop = asyncio.get_event_loop()
         sanitizer = InputSanitizer()
         try:
@@ -62,9 +68,8 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error interno: {e}")
 
-        # to_dict() serializa datetime, floats y listas correctamente
         result = ctx.to_dict()
-        result['output'] = ctx.final_output  # alias que espera el frontend
+        result['output'] = ctx.final_output
         return result
 
     @app.get('/api/sessions')
