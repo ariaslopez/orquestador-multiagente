@@ -68,12 +68,19 @@ class APIRouter:
     """
 
     # Tareas que prefieren calidad cloud sobre velocidad local
-    CLOUD_PREFERRED_TASKS = {"research", "thesis", "analysis", "security_audit"}
+    # planning y reasoning se escalan a Groq porque generan respuestas largas
+    # que agotan el timeout en CPU sin GPU.
+    CLOUD_PREFERRED_TASKS = {
+        "research", "thesis", "analysis", "security_audit",
+        "planning", "reasoning",
+    }
     # Tareas ideales para local (deterministas, acotadas)
-    LOCAL_PREFERRED_TASKS = {"coding", "formatting", "summary", "extraction",
-                              "classification", "embeddings", "similarity", "planning",
-                              "review", "content", "office", "qa", "pm",
-                              "trading", "analytics", "marketing", "product", "design"}
+    LOCAL_PREFERRED_TASKS = {
+        "coding", "formatting", "summary", "extraction",
+        "classification", "embeddings", "similarity",
+        "review", "content", "office", "qa", "pm",
+        "trading", "analytics", "marketing", "product", "design",
+    }
 
     def __init__(self):
         # Claves cloud
