@@ -10,7 +10,7 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
     try:
         import uvicorn
         from fastapi import FastAPI, HTTPException
-        from fastapi.responses import HTMLResponse, JSONResponse
+        from fastapi.responses import HTMLResponse
         from pydantic import BaseModel
     except ImportError:
         print("Falta fastapi/uvicorn: pip install fastapi uvicorn")
@@ -41,13 +41,12 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         from infrastructure.memory_manager import MemoryManager
         from core.maestro import Maestro
 
-        # FIX 1: assert_safe es sincrono — correr en executor para no bloquear el event loop
-        loop = asyncio.get_running_loop()
+        # assert_safe es sincrono — run_in_executor para no bloquear uvicorn
+        loop = asyncio.get_event_loop()
         sanitizer = InputSanitizer()
         try:
             clean_task = await loop.run_in_executor(None, sanitizer.assert_safe, req.task)
         except ValueError as e:
-            # FIX 2: usar HTTPException en lugar de retornar tupla (FastAPI no soporta tuplas)
             raise HTTPException(status_code=400, detail=str(e))
 
         memory = MemoryManager()
@@ -61,18 +60,12 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
                 auto_mode=req.auto,
             )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error interno del pipeline: {e}")
+            raise HTTPException(status_code=500, detail=f"Error interno: {e}")
 
-        return JSONResponse(content={
-            'session_id': ctx.session_id,
-            'pipeline': ctx.pipeline_name,
-            'output': ctx.final_output,
-            'tokens': ctx.total_tokens,
-            'cost_usd': ctx.estimated_cost_usd,
-            'duration': ctx.duration_seconds,
-            'status': ctx.status,
-            'error': ctx.error,
-        })
+        # to_dict() serializa datetime, floats y listas correctamente
+        result = ctx.to_dict()
+        result['output'] = ctx.final_output  # alias que espera el frontend
+        return result
 
     @app.get('/api/sessions')
     async def get_sessions():
@@ -104,8 +97,8 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
             },
         }
 
-    print(f"\n🧠 CLAW Dashboard corriendo en http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_level='warning')
+    print(f"\n🧠 CLAW Dashboard → http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level='info')
 
 
 FALLBACK_HTML = """
@@ -140,7 +133,7 @@ FALLBACK_HTML = """
                     <option value="security_audit">SECURITY AUDIT</option>
                     <option value="design">DESIGN</option>
                 </select>
-                <button id="btn" onclick="runTask()" class="bg-cyan-600 hover:bg-cyan-500 px-6 py-2 rounded font-medium">
+                <button id="btn" onclick="runTask()" class="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 px-6 py-2 rounded font-medium">
                     Ejecutar
                 </button>
             </div>
@@ -159,45 +152,38 @@ FALLBACK_HTML = """
         const task = document.getElementById('task').value.trim();
         const pipeline = document.getElementById('pipeline').value;
         if (!task) return alert('Escribe una tarea primero');
-
         const btn = document.getElementById('btn');
-        btn.disabled = true;
-        btn.textContent = 'Ejecutando...';
-
+        btn.disabled = true; btn.textContent = '⏳ Ejecutando...';
         const out = document.getElementById('output');
         out.classList.remove('hidden');
         document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-yellow-400 animate-pulse';
-        document.getElementById('status-text').textContent = 'Procesando (puede tardar 10-60s)...';
+        document.getElementById('status-text').textContent = 'Procesando (30-90s)...';
         document.getElementById('result').textContent = '';
-
         try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 300000); // 5 min
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 300000);
             const resp = await fetch('/api/task', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({task, task_type: pipeline || null, auto: true}),
-                signal: controller.signal,
+                signal: ctrl.signal,
             });
-            clearTimeout(timeout);
-
+            clearTimeout(tid);
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({detail: resp.statusText}));
-                throw new Error(err.detail || resp.statusText);
+                throw new Error(err.detail || `HTTP ${resp.status}`);
             }
-
             const data = await resp.json();
             document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-green-400';
             document.getElementById('status-text').textContent =
-                `Completado en ${(data.duration??0).toFixed(1)}s | ${(data.tokens??0).toLocaleString()} tokens | $${(data.cost_usd??0).toFixed(4)} USD`;
-            document.getElementById('pipeline-badge').textContent = data.pipeline || pipeline || 'AUTO';
-            document.getElementById('result').textContent = data.output || '(sin output)';
+                `Completado en ${(data.duration_seconds??0).toFixed(1)}s | ${(data.total_tokens??0).toLocaleString()} tokens | $${(data.estimated_cost_usd??0).toFixed(4)} USD`;
+            document.getElementById('pipeline-badge').textContent = data.pipeline_name || pipeline || 'AUTO';
+            document.getElementById('result').textContent = data.output || data.final_output || '(sin output)';
         } catch(e) {
             document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-red-400';
-            document.getElementById('status-text').textContent = 'Error: ' + e.message;
+            document.getElementById('status-text').textContent = 'Error: ' + (e.name === 'AbortError' ? 'timeout >5min' : e.message);
         } finally {
-            btn.disabled = false;
-            btn.textContent = 'Ejecutar';
+            btn.disabled = false; btn.textContent = 'Ejecutar';
         }
     }
     </script>
