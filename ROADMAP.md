@@ -103,7 +103,7 @@ LOCAL_CONTEXT_SIZE=128000
 ## 🟠 Fase 12: Autonomía y Loop de Corrección
 
 > Siguiente fase — objetivo: v2.2.0
-> Inspirado en: análisis de "Domina el 90% de Claude Code" (SaaS Factory, abril 2026)
+> Fuentes: análisis de tutoriales Claude Code (Platzi + SaaS Factory) + ecosistema real (claude-code-hooks-mastery, composio.dev, trensee.com)
 
 - [ ] **Worker lifecycle state machine** — `infrastructure/worker_lifecycle.py`
   - [ ] Estados: `spawning → ready → running → blocked → failed → finished`
@@ -115,30 +115,37 @@ LOCAL_CONTEXT_SIZE=128000
   - [ ] Detectar test failure → inyectar output de tests → reintentar
   - [ ] Máximo `MAX_ITERATIONS=5` por tarea
 
+- [ ] **Hooks de lifecycle** — `infrastructure/hooks/`
+  - [ ] `session-start.py` — inyecta `CLAW.md` + skills del proyecto al iniciar
+  - [ ] `user-prompt-submit.py` — sanitiza input + inyecta contexto del proyecto
+  - [ ] `pretool-guard.py` — enforcea workspace boundaries, bloquea paths prohibidos
+  - [ ] `posttool-validate.py` — corre lint/tests automáticamente después de Write/Edit
+  - [ ] `stop-enforcer.py` — si tests fallan, fuerza al agente a continuar (reemplaza loop manual)
+  - [ ] Exit code `2` = bloquear acción; JSON `"decision": "continue"` = forzar iteración
+  - [ ] 5 tipos: `SessionStart | UserPromptSubmit | PreToolUse | PostToolUse | Stop`
+
 - [ ] **Modos de ejecución** — `ExecutionMode` en `core/loop_controller.py`
   - [ ] `PLAN_ONLY` — el agente investiga y genera plan, no modifica nada
   - [ ] `SUPERVISED` — pregunta al usuario antes de cada acción destructiva
   - [ ] `AUTONOMOUS` — bypass permissions, trabaja de 0 a 100 sin interrupciones
   - [ ] Default: `SUPERVISED`; activar `AUTONOMOUS` con `--auto` en CLI
-  - [ ] Equivalente al `--dangerously-skip-permissions` de Claude Code
 
 - [ ] **Flujo Plan → Aprobación → Ejecución** — `core/maestro.py`
   - [ ] Paso 1 `PLAN MODE`: el Maestro investiga contexto y genera plan estructurado
-  - [ ] Paso 2: muestra el plan al usuario para aprobación (`--yes` para auto-aprobar)
+  - [ ] Paso 2: muestra el plan al usuario (`--yes` para auto-aprobar)
   - [ ] Paso 3 `AUTONOMOUS MODE`: ejecución sin interrupciones hasta terminar
   - [ ] `python main.py --task "..." --type dev --plan` → solo genera el plan
   - [ ] `python main.py --task "..." --type dev --auto` → ejecuta sin confirmaciones
 
 - [ ] **Effort level** — `core/task_packet.py`
   - [ ] `effort: Literal["min", "normal", "max"] = "normal"`
-  - [ ] `min` → respuesta rápida, ahorra tokens (ideal para Athlon 3000G + Ollama)
-  - [ ] `normal` → balance calidad/velocidad (default)
-  - [ ] `max` → investigación profunda antes de actuar (tareas críticas)
+  - [ ] `min` → respuesta rápida, ahorra tokens (ideal Athlon 3000G + Ollama)
+  - [ ] `max` → investigación profunda + thinking extendido antes de actuar
   - [ ] CLI: `python main.py --task "..." --effort max`
 
 - [ ] **Thinking habilitado por default** — `core/api_router.py`
-  - [ ] Groq + Gemini: activar chain-of-thought en tareas `REASONING_TASKS`
-  - [ ] Ollama: usar `/think` tag en `qwen2.5-coder:7b` para tareas complejas
+  - [ ] Groq + Gemini: chain-of-thought en `REASONING_TASKS`
+  - [ ] Ollama: `/think` tag en `qwen2.5-coder:7b` para tareas complejas
   - [ ] Controlado por `effort`: `min` → sin thinking, `max` → thinking extendido
 
 - [ ] **Typed task packets** — `core/task_packet.py`
@@ -157,37 +164,48 @@ LOCAL_CONTEXT_SIZE=128000
 ## 🟠 Fase 13: Comprensión Real del Codebase
 
 > Objetivo: que el pipeline DEV lea, edite y entienda proyectos existentes
-> Inspirado en: análisis de tutoriales Claude Code (Platzi + SaaS Factory, abril 2026)
+> Fuentes: tutoriales Claude Code (Platzi + SaaS Factory) + alexop.dev + SFEIR Institute + composio.dev
 
 - [ ] **Project initializer** — `tools/project_initializer.py`
   - [ ] Escanea el workspace y extrae: comandos run/test, dependencias, arquitectura
-  - [ ] Genera `CLAW.md` en la raíz del proyecto — contexto persistente sin tokens extra
-  - [ ] El Maestro inyecta `CLAW.md` en el system prompt de cada agente automáticamente
+  - [ ] Genera `CLAW.md` — contexto persistente inyectado en cada agente automáticamente
   - [ ] CLI: `python main.py --init /ruta/proyecto`
-  - [ ] Equivalente al `/init` de Claude Code
 
-- [ ] **Skills por proyecto** — `.claw/commands/` + `tools/skill_loader.py`
-  - [ ] Archivos `.md` en `.claw/commands/` como prompts reutilizables del proyecto
-  - [ ] Ejemplos: `python_best_practices.md`, `commit_style.md`, `api_design_rules.md`
-  - [ ] `SkillLoader.load_from(workspace)` → inyecta skills en `AgentContext`
-  - [ ] Equivalente a `.claude/commands/` de Claude Code
+- [ ] **Estructura de skills** — `.claw/skills/<nombre>/SKILL.md` (formato 2026)
+  - [ ] Subdirectorio por skill con `SKILL.md` + archivos de soporte
+  - [ ] Frontmatter YAML completo: `name`, `description`, `allowed-tools`, `context`, `model`, `hooks`
+  - [ ] `description` = cerebro del skill — Claude decide auto-invocación solo por este campo
+  - [ ] `context: fork` para skills de exploración → subagente aislado que no contamina contexto principal
+  - [ ] `disable-model-invocation: true` para skills de operaciones destructivas (deploy, delete)
+  - [ ] Ejemplos de skills base: `explore-codebase`, `python-best-practices`, `commit-style`, `api-design`, `security-review`, `test-generator`
+  - [ ] Retrocompatibilidad: `.claw/commands/*.md` (formato legacy) sigue funcionando
 
-- [ ] **@archivo en prompt** — `core/prompt_parser.py`
-  - [ ] Parser detecta `@ruta/archivo.py` en el texto del task
-  - [ ] Lee el archivo y lo inyecta en el contexto del agente automáticamente
+- [ ] **Skill loader** — `tools/skill_loader.py`
+  - [ ] `load_from(workspace)` → descubre y parsea todos los `SKILL.md` del proyecto
+  - [ ] Parsea frontmatter YAML completo (no solo `description`)
+  - [ ] Inyecta skills en `AgentContext` según `effort` y tipo de tarea
+  - [ ] NO carga todos los skills en cada sesión — solo los relevantes (ahorra tokens)
+
+- [ ] **Skill validator** — `tools/skill_validator.py`
+  - [ ] Valida `SKILL.md` antes de cargarlo: campos requeridos, sintaxis YAML, longitud
+  - [ ] Advierte si skill >50 líneas (recomendación: dividir en 2)
+  - [ ] Verifica que `allowed-tools` sean herramientas válidas del sistema
+  - [ ] Integrado en `--doctor` para diagnóstico de skills del proyecto
+
+- [ ] **Prompt parser** — `core/prompt_parser.py`
+  - [ ] Detecta `@ruta/archivo.py` → lee archivo e inyecta en contexto automáticamente
+  - [ ] Soporta múltiples `@archivo` en el mismo prompt
+  - [ ] Parsea `$ARGUMENTS` en slash commands (parámetros en skills invocados manualmente)
   - [ ] `python main.py --task "refactoriza @src/api_router.py" --type dev`
-  - [ ] Soporta múltiples archivos: `@file1.py @file2.py`
-  - [ ] Equivalente al `@archivo` de Claude Code
 
-- [ ] **Stdin pipe operator** — `main.py --stdin`
-  - [ ] `cat archivo.py | python main.py --type review --stdin`
-  - [ ] `git diff HEAD~1 | python main.py --type security_audit --stdin`
-  - [ ] `cat logs.csv | python main.py --type analytics --stdin`
-  - [ ] Equivalente al pipe `|` de Claude Code CLI
+- [ ] **Planner agent con context:fork** — `agents/dev/planner_agent.py`
+  - [ ] Planner corre en subagente aislado (context:fork) para exploración del codebase
+  - [ ] Devuelve solo el mapa condensado al Maestro sin contaminar el contexto del Coder
+  - [ ] Preserva tokens del contexto principal para el pipeline de ejecución
 
 - [ ] **Codebase indexer** — `tools/codebase_indexer.py`
   - [ ] Indexación AST de Python (funciones, clases, imports, docstrings)
-  - [ ] Búsqueda semántica sobre el índice local (sin API)
+  - [ ] Búsqueda semántica local (sin API)
   - [ ] `get_context_for_task(task, top_k=10)` → archivos relevantes
 
 - [ ] **File editor tool** — `tools/file_editor.py`
@@ -200,16 +218,17 @@ LOCAL_CONTEXT_SIZE=128000
   - [ ] Símbolos y definiciones del workspace
 
 - [ ] **Session store persistente** — `tools/session_store.py`
-  - [ ] `checkpoint(label)` → guarda estado actual del workspace con etiqueta
-  - [ ] `rewind(checkpoint_id)` → revierte a checkpoint anterior si el agente falla
+  - [ ] `checkpoint(label)` → guarda estado actual del workspace
+  - [ ] `rewind(checkpoint_id)` → revierte a checkpoint anterior
   - [ ] `resume(session_id)` → retoma sesión completa interrumpida
-  - [ ] CLI: `python main.py --resume <session_id>`
-  - [ ] CLI: `python main.py --rewind <checkpoint_id>`
-  - [ ] Equivalente al `claude -c` (continue) + rewind de Claude Code
+  - [ ] CLI: `python main.py --resume <id>` / `--rewind <id>`
+
+- [ ] **Stdin pipe operator** — `main.py --stdin`
+  - [ ] `cat archivo.py | python main.py --type review --stdin`
+  - [ ] `git diff HEAD~1 | python main.py --type security_audit --stdin`
 
 - [ ] **Dashboard multi-agente visual** — `ui/index.html`
-  - [ ] Panel de estado en tiempo real por agente del pipeline activo
-  - [ ] Muestra: nombre agente, estado (✅ done / 🔄 running / ⏸ wait), duración
+  - [ ] Panel estado en tiempo real por agente: nombre, estado, duración
   - [ ] Consume `LaneEvent` tipados vía WebSocket
 
 ---
@@ -217,6 +236,7 @@ LOCAL_CONTEXT_SIZE=128000
 ## 🟠 Fase 14: Memoria Episódica (Aprendizaje Real)
 
 > El sistema recuerda qué funcionó y qué no
+> Meta-skill confirmado por ecosistema: awesome-claude-skills, composio.dev skill-creator
 
 - [ ] **EpisodicMemory** — `infrastructure/episodic_memory.py`
   - [ ] `record_interaction(task, pipeline, result, success)`
@@ -227,10 +247,10 @@ LOCAL_CONTEXT_SIZE=128000
 
 - [ ] **Meta-skill: auto-generación de skills** — `infrastructure/episodic_memory.py`
   - [ ] Detecta patrones recurrentes en tareas exitosas (>3 veces)
-  - [ ] Genera automáticamente `.claw/commands/<skill_name>.md` con el prompt optimizado
-  - [ ] La próxima tarea similar carga el skill directo sin consumir tokens de inferencia
-  - [ ] `SkillCreator.from_memory(memory_record)` → genera el archivo `.md`
-  - [ ] Equivalente al "skill creator" de Claude Code — el sistema se programa a sí mismo
+  - [ ] Genera automáticamente `.claw/skills/<nombre>/SKILL.md` con frontmatter correcto
+  - [ ] `SkillCreator.from_memory(memory_record)` → genera el archivo con descripción óptima
+  - [ ] El sistema se programa a sí mismo — skills mejoran con el uso
+  - [ ] Confirmado por ecosistema real: `skill-creator` es patrón establecido en producción
 
 - [ ] **Self-improvement export** — `tools/export_training_data.py`
   - [ ] Exporta interacciones exitosas como dataset JSONL
@@ -253,7 +273,7 @@ LOCAL_CONTEXT_SIZE=128000
   - [ ] Script de entrenamiento con Unsloth: `tools/finetune.py`
   - [ ] Input: dataset de `export_training_data.py` (~500+ sesiones exitosas)
   - [ ] Output: modelo GGUF importable en Ollama
-  - [ ] Convierte `qwen2.5-coder:7b` en un modelo especializado en TU codebase
+  - [ ] Convierte `qwen2.5-coder:7b` en modelo especializado en TU codebase
 - [ ] **CI/CD completo** — `.github/workflows/`
   - [ ] `test.yml` — pytest en cada PR
   - [ ] `lint.yml` — ruff + mypy
@@ -271,20 +291,23 @@ LOCAL_CONTEXT_SIZE=128000
 |------|-----------|---------------|
 | Worker lifecycle state machine | Alta | Fase 12 |
 | Loop de corrección autónomo | Alta | Fase 12 |
+| Hooks de lifecycle (5 scripts) | Alta | Fase 12 |
 | ExecutionMode PLAN/SUPERVISED/AUTONOMOUS | Alta | Fase 12 |
 | Flujo Plan → Aprobación → Ejecución | Alta | Fase 12 |
 | Effort level en TaskPacket | Media | Fase 12 |
 | Thinking ON por default (chain-of-thought) | Media | Fase 12 |
 | Codebase indexer (AST) | Alta | Fase 13 |
 | Project initializer + CLAW.md | Alta | Fase 13 |
+| .claw/skills/ formato nuevo + SkillLoader | Alta | Fase 13 |
+| Skill validator | Media | Fase 13 |
+| Planner context:fork (aislamiento) | Alta | Fase 13 |
 | @archivo en prompt CLI | Media | Fase 13 |
-| checkpoint() + rewind() en session store | Media | Fase 13 |
+| checkpoint() + rewind() | Media | Fase 13 |
 | Stdin pipe operator | Baja | Fase 13 |
-| Skills por proyecto (.claw/commands/) | Media | Fase 13 |
 | Dashboard multi-agente visual | Media | Fase 13 |
 | Meta-skill: auto-generación de skills | Alta | Fase 14 |
 | Memoria episódica | Media | Fase 14 |
-| CLOUD_CONTEXT_LIMITS 1M fix en api_router | Baja | Fase 11 fix |
+| CLOUD_CONTEXT_LIMITS 1M fix | Baja | Fase 11 fix |
 | Docker sandbox real | Media | Fase 15 |
 | SQLite → Supabase principal | Media | Fase 15 |
 | Auth en `/api/task` | Media | Fase 15 |
@@ -314,7 +337,7 @@ cp .env.example .env
 # 4. Verificar sistema
 python main.py --doctor
 
-# 5. Primera tarea con LLM local
+# 5. Primera tarea
 python main.py --task "Crea una API REST para señales de trading" --type dev
 ```
 
@@ -323,11 +346,11 @@ python main.py --task "Crea una API REST para señales de trading" --type dev
 ```bash
 # Ejecución básica
 python main.py --task "<tarea>" --type <pipeline>
-python main.py --task "<tarea>" --type dev --plan         # Solo genera el plan
-python main.py --task "<tarea>" --type dev --auto         # Ejecuta sin confirmaciones
-python main.py --task "<tarea>" --type dev --effort max   # Investigación profunda
+python main.py --task "<tarea>" --type dev --plan          # Solo genera el plan
+python main.py --task "<tarea>" --type dev --auto          # Ejecuta sin confirmaciones
+python main.py --task "<tarea>" --type dev --effort max    # Investigación profunda
 
-# Referencia de archivos en el prompt
+# Referencia de archivos
 python main.py --task "refactoriza @src/api.py" --type dev
 cat archivo.py | python main.py --type review --stdin
 
