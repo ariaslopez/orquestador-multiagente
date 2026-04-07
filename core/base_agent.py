@@ -91,14 +91,14 @@ class BaseAgent(ABC):
                 timeout=_LLM_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            api_used = self._api_router.select_api(task_type)
+            api_used = self._api_router.select_provider(task_type)
             raise RuntimeError(
                 f"[{self.name}] LLM timeout después de {_LLM_TIMEOUT}s "
                 f"(api={api_used}, task_type={task_type}). "
                 f"Ajusta LLM_TIMEOUT_SECONDS en .env si el modelo es lento."
             )
 
-        api_used = self._api_router.select_api(task_type)
+        api_used = self._api_router.select_provider(task_type)
         cost = self._api_router.cost_for_tokens(tokens, api_used)
         ctx.add_tokens(tokens, cost=cost, api=api_used)
 
