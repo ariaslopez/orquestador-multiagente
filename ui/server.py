@@ -4,19 +4,18 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
+try:
+    from pydantic import BaseModel, field_validator
+    from fastapi import FastAPI, HTTPException
+    from fastapi.responses import HTMLResponse
+    import uvicorn
+    _DEPS_OK = True
+except ImportError:
+    _DEPS_OK = False
+    BaseModel = object  # fallback para que el modulo cargue sin crash
 
-def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
-    try:
-        import uvicorn
-        from fastapi import FastAPI, HTTPException
-        from fastapi.responses import HTMLResponse
-        from pydantic import BaseModel, field_validator
-    except ImportError:
-        print("Falta fastapi/uvicorn: pip install fastapi uvicorn")
-        return
 
-    app = FastAPI(title="CLAW Agent System", version="2.0.0")
-
+if _DEPS_OK:
     class TaskRequest(BaseModel):
         task: str
         task_type: Optional[str] = None
@@ -26,10 +25,18 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
         @field_validator('task_type', 'input_file', mode='before')
         @classmethod
         def empty_str_to_none(cls, v):
-            """Convierte string vacio a None — el select HTML envia '' cuando no hay seleccion."""
+            """Convierte string vacio a None — el select HTML envia '' sin seleccion."""
             if isinstance(v, str) and v.strip() == '':
                 return None
             return v
+
+
+def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
+    if not _DEPS_OK:
+        print("Falta fastapi/uvicorn/pydantic: pip install fastapi uvicorn pydantic")
+        return
+
+    app = FastAPI(title="CLAW Agent System", version="2.0.0")
 
     @app.get('/', response_class=HTMLResponse)
     async def index():
