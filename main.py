@@ -61,6 +61,20 @@ def run_doctor() -> None:
         ok = bool(val) and "your_" not in val
         checks.append((f"{api} API Key", ok, "✅" if ok else "❌ no configurada"))
 
+    # Ollama — ping servidor local
+    import urllib.request
+    ollama_enabled = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace("/v1", "")
+    if ollama_enabled:
+        try:
+            urllib.request.urlopen(ollama_url, timeout=2)
+            ollama_model = os.getenv("OLLAMA_MODEL", "") or os.getenv("OLLAMA_HW_PROFILE", "auto")
+            checks.append(("Ollama (local LLM)", True, f"✅ activo — modelo: {ollama_model}"))
+        except Exception:
+            checks.append(("Ollama (local LLM)", False, f"❌ no responde en {ollama_url} — ejecuta: ollama serve"))
+    else:
+        checks.append(("Ollama (local LLM)", False, "⚠️  deshabilitado (OLLAMA_ENABLED=false)"))
+
     # Packages
     for pkg in [
         "groq", "fastapi", "uvicorn", "supabase", "rich",
