@@ -116,23 +116,53 @@ LOCAL_CONTEXT_SIZE=128000
 
 ## 🟠 Fase 13: Comprensión Real del Codebase
 
-> Objetivo: que el pipeline DEV lea y edite proyectos existentes
+> Objetivo: que el pipeline DEV lea, edite y entienda proyectos existentes
+> Inspirado en: análisis del tutorial Claude Code (Platzi, abril 2026)
+
+- [ ] **Project initializer** — `tools/project_initializer.py`
+  - [ ] Escanea el workspace y extrae: comandos run/test, dependencias, arquitectura
+  - [ ] Genera `CLAW.md` en la raíz del proyecto — contexto persistente sin tokens extra
+  - [ ] El Maestro inyecta `CLAW.md` en el system prompt de cada agente automáticamente
+  - [ ] Equivalente al `/init` de Claude Code
+  - [ ] CLI: `python main.py --init /ruta/proyecto`
+
+- [ ] **Skills por proyecto** — `.claw/commands/` + `tools/skill_loader.py`
+  - [ ] Archivos `.md` en `.claw/commands/` como prompts reutilizables del proyecto
+  - [ ] Ejemplos: `python_best_practices.md`, `commit_style.md`, `api_design_rules.md`
+  - [ ] `SkillLoader.load_from(workspace)` → inyecta skills en `AgentContext`
+  - [ ] Equivalente a `.claude/commands/` de Claude Code
+
+- [ ] **Stdin pipe operator** — `main.py --stdin`
+  - [ ] `cat archivo.py | python main.py --type review --stdin`
+  - [ ] `git diff HEAD~1 | python main.py --type security_audit --stdin`
+  - [ ] `cat logs.csv | python main.py --type analytics --stdin`
+  - [ ] Equivalente al pipe `|` de Claude Code CLI
 
 - [ ] **Codebase indexer** — `tools/codebase_indexer.py`
   - [ ] Indexación AST de Python (funciones, clases, imports, docstrings)
   - [ ] Búsqueda semántica sobre el índice local (sin API)
   - [ ] `get_context_for_task(task, top_k=10)` → archivos relevantes
+
 - [ ] **File editor tool** — `tools/file_editor.py`
   - [ ] `read_file`, `write_file`, `patch_file` (diff-based)
   - [ ] Workspace boundary enforcement
   - [ ] Integrado en pipeline DEV como herramienta del `coder_agent`
+
 - [ ] **LSP bridge básico** — `tools/lsp_bridge.py`
   - [ ] Diagnósticos vía `pylsp` (errores, warnings)
   - [ ] Símbolos y definiciones del workspace
   - [ ] Hover info para completación de código
+
 - [ ] **Session store persistente** — `tools/session_store.py`
   - [ ] Guarda estado del workspace entre sesiones
-  - [ ] Retoma trabajo interrumpido (`--resume`)
+  - [ ] Retoma trabajo interrumpido: `python main.py --resume <session_id>`
+  - [ ] Equivalente al `claude -c` (continue) de Claude Code
+
+- [ ] **Dashboard multi-agente visual** — `ui/index.html`
+  - [ ] Panel de estado en tiempo real por agente del pipeline activo
+  - [ ] Muestra: nombre agente, estado (✅ done / 🔄 running / ⏸ wait), duración
+  - [ ] Consume `LaneEvent` tipados vía WebSocket
+  - [ ] Equivalente a correr múltiples Claude Code en paralelo con visibilidad
 
 ---
 
@@ -185,7 +215,11 @@ LOCAL_CONTEXT_SIZE=128000
 | Worker lifecycle state machine | Alta | Fase 12 |
 | Loop de corrección autónomo | Alta | Fase 12 |
 | Codebase indexer (AST) | Alta | Fase 13 |
+| Project initializer + CLAW.md | Alta | Fase 13 |
+| Stdin pipe operator | Baja | Fase 13 |
+| Skills por proyecto (.claw/commands/) | Media | Fase 13 |
 | Memoria episódica | Media | Fase 14 |
+| Dashboard multi-agente visual | Media | Fase 13 |
 | Docker sandbox real | Media | Fase 15 |
 | SQLite → Supabase principal | Media | Fase 15 |
 | Auth en `/api/task` | Media | Fase 15 |
@@ -228,6 +262,9 @@ python main.py --ui                   # Dashboard → http://127.0.0.1:8000
 python main.py --doctor               # Diagnóstico + estado del router LLM
 python main.py --history              # Últimas 20 sesiones
 python main.py --usage                # Tokens y costos acumulados
+python main.py --init /ruta/proyecto  # Genera CLAW.md (Fase 13)
+python main.py --resume <session_id>  # Retoma sesión interrumpida (Fase 13)
+cat archivo.py | python main.py --type review --stdin  # Pipe operator (Fase 13)
 ```
 
 ## Pipelines disponibles (v2.1.0)
