@@ -24,8 +24,9 @@
         <div class="bg-gray-800 rounded-lg p-4 md:col-span-2">
             <h2 class="text-lg font-semibold mb-2">Nueva tarea</h2>
             <textarea id="task" class="w-full bg-gray-900 text-white rounded p-3 mb-3 h-28 resize-none"
-                      placeholder="Describe tu tarea en lenguaje natural (ej: 'Crea un bot de arbitraje para Binance con dashboard y logs en Supabase')..."></textarea>
-            <div class="flex flex-wrap gap-2 items-center">
+                      placeholder="Describe tu tarea en lenguaje natural..."></textarea>
+
+            <div class="flex flex-wrap gap-2 items-center mb-3">
                 <select id="pipeline" class="bg-gray-900 text-white rounded px-3 py-2 text-sm">
                     <option value="">Auto-detectar pipeline</option>
                     <option value="dev">DEV — Generar proyecto</option>
@@ -41,13 +42,40 @@
                     <option value="security_audit">SECURITY AUDIT — OWASP / pentest</option>
                     <option value="design">DESIGN — UI/UX y branding</option>
                 </select>
-                <input id="file" type="text" placeholder="Ruta de archivo (opcional)"
-                    class="flex-1 min-w-[180px] bg-gray-900 text-white rounded px-3 py-2 text-sm" />
-                <button id="run-btn" onclick="runTask()"
-                    class="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-2 rounded font-medium text-sm transition-colors">
-                    Ejecutar tarea
-                </button>
             </div>
+
+            <!-- File picker nativo -->
+            <div class="flex items-center gap-2 mb-3">
+                <input
+                    type="file"
+                    id="file-input"
+                    class="hidden"
+                    accept=".xlsx,.csv,.pdf,.docx,.pptx,.txt,.py,.js,.ts,.json,.yaml,.yml,.md"
+                    onchange="onFileSelected(this)"
+                />
+                <button
+                    onclick="document.getElementById('file-input').click()"
+                    class="bg-gray-700 hover:bg-gray-600 border border-gray-600 px-4 py-2 rounded text-sm flex items-center gap-2 transition-colors"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                    </svg>
+                    Examinar archivo
+                </button>
+                <span id="file-name" class="text-sm text-gray-400 italic">Ningún archivo seleccionado (opcional)</span>
+                <button
+                    id="file-clear"
+                    onclick="clearFile()"
+                    class="hidden text-gray-500 hover:text-red-400 text-lg leading-none px-1"
+                    title="Quitar archivo"
+                >&times;</button>
+            </div>
+
+            <button id="run-btn" onclick="runTask()"
+                class="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-2 rounded font-medium text-sm transition-colors w-full">
+                Ejecutar tarea
+            </button>
         </div>
 
         <div class="bg-gray-800 rounded-lg p-4 space-y-2">
@@ -84,7 +112,7 @@
             <ul class="list-disc list-inside space-y-1">
                 <li>DEV — describe el stack deseado (Flask/FastAPI, Supabase, Tailwind, etc.).</li>
                 <li>RESEARCH — pide una tesis de inversión o comparativa (ej: L2s, DeFi, NFT).</li>
-                <li>OFFICE — especifica el archivo .xlsx/.csv/.pdf en el campo de archivo.</li>
+                <li>OFFICE — usa “Examinar archivo” para seleccionar tu .xlsx/.csv/.pdf.</li>
                 <li>Las tareas DEV y RESEARCH pueden tardar 30-90 segundos.</li>
             </ul>
         </div>
@@ -96,7 +124,39 @@
 </div>
 
 <script>
-// Verificar health del backend al cargar
+// ---- File picker ----
+let selectedFilePath = null;
+
+function onFileSelected(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    // En browser solo tenemos el nombre, no la ruta completa por seguridad.
+    // Guardamos el nombre y lo enviamos; el backend lo recibe como referencia.
+    selectedFilePath = file.name;
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-name').classList.remove('italic', 'text-gray-400');
+    document.getElementById('file-name').classList.add('text-cyan-300');
+    document.getElementById('file-clear').classList.remove('hidden');
+
+    // Auto-seleccionar pipeline OFFICE si el archivo es Office/PDF
+    const ext = file.name.split('.').pop().toLowerCase();
+    const officeExts = ['xlsx', 'xls', 'csv', 'pdf', 'docx', 'doc', 'pptx', 'ppt'];
+    if (officeExts.includes(ext)) {
+        const sel = document.getElementById('pipeline');
+        if (!sel.value) sel.value = 'office';
+    }
+}
+
+function clearFile() {
+    selectedFilePath = null;
+    document.getElementById('file-input').value = '';
+    document.getElementById('file-name').textContent = 'Ningún archivo seleccionado (opcional)';
+    document.getElementById('file-name').classList.add('italic', 'text-gray-400');
+    document.getElementById('file-name').classList.remove('text-cyan-300');
+    document.getElementById('file-clear').classList.add('hidden');
+}
+
+// ---- Health check ----
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         const r = await fetch('/api/health');
@@ -110,10 +170,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// ---- Run task ----
 async function runTask() {
     const task = document.getElementById('task').value.trim();
     const pipeline = document.getElementById('pipeline').value;
-    const inputFile = document.getElementById('file').value.trim() || null;
     if (!task) return alert('Escribe una tarea primero');
 
     const btn = document.getElementById('run-btn');
@@ -128,35 +188,38 @@ async function runTask() {
     document.getElementById('pipeline-badge').textContent = pipeline || 'AUTO';
 
     try {
-        // Timeout de 5 minutos para tareas largas
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 300000);
 
         const resp = await fetch('/api/task', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ task, task_type: pipeline || null, input_file: inputFile, auto: true }),
+            body: JSON.stringify({
+                task,
+                task_type: pipeline || null,
+                input_file: selectedFilePath || null,
+                auto: true
+            }),
             signal: controller.signal,
         });
         clearTimeout(tid);
 
-        // Manejar errores HTTP (4xx, 5xx) correctamente
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }));
             throw new Error(err.detail || `HTTP ${resp.status}`);
         }
 
         const data = await resp.json();
-
         document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-green-400';
         document.getElementById('status-text').textContent =
-            `Completado en ${(data.duration ?? 0).toFixed(1)}s · ${(data.tokens ?? 0).toLocaleString()} tokens · $${(data.cost_usd ?? 0).toFixed(4)} USD`;
-        document.getElementById('pipeline-badge').textContent = data.pipeline || pipeline || 'AUTO';
-        document.getElementById('result').textContent = data.output || '(sin output)';
+            `Completado en ${(data.duration_seconds ?? 0).toFixed(1)}s · ${(data.total_tokens ?? 0).toLocaleString()} tokens · $${(data.estimated_cost_usd ?? 0).toFixed(4)} USD`;
+        document.getElementById('pipeline-badge').textContent = data.pipeline_name || pipeline || 'AUTO';
+        document.getElementById('result').textContent = data.output || data.final_output || '(sin output)';
 
     } catch (e) {
         document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-red-400';
-        document.getElementById('status-text').textContent = 'Error: ' + (e.name === 'AbortError' ? 'timeout (>5min)' : e.message);
+        document.getElementById('status-text').textContent =
+            'Error: ' + (e.name === 'AbortError' ? 'timeout (>5min)' : e.message);
         document.getElementById('result').textContent = '';
     } finally {
         btn.disabled = false;
