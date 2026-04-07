@@ -1,279 +1,320 @@
+"""LoopController — Autonomía y loop de corrección para el sistema CLAW.
+
+Fase 12: Worker lifecycle state machine + ExecutionMode + loop autónomo.
+
+Arquitectura:
+  Maestro.run()
+    → LoopController.run(pipeline_fn, ctx)
+        → ExecutionMode.SUPERVISED  → pregunta antes de acciones destructivas
+        → ExecutionMode.AUTONOMOUS  → ejecuta sin interrupciones
+        → ExecutionMode.PLAN_ONLY   → genera plan, no modifica nada
+        → loop interno: detecta errores → inyecta contexto → reintenta (max 5)
+
+Estados del worker (WorkerState):
+  spawning → ready → running → blocked → failed → finished
+
+Integración con PipelineRouter:
+  PipelineRouter.run_sequential() ya inyecta _last_error en ctx.
+  LoopController usa ese contexto para decidir si reintentar el pipeline
+  completo o solo el agente fallido.
 """
-Loop Controller — Fase 12
-Motor de corrección autónoma del sistema CLAW.
-
-Orquesta el ciclo completo de una tarea:
-  1. Recibe un TaskPacket
-  2. Ejecuta el pipeline del Maestro
-  3. Si hay error: clasifica, inyecta contexto, reintenta
-  4. Máximo MAX_ITERATIONS intentos antes de escalar
-  5. Emite LaneEvents para el dashboard en cada paso
-
-Interacción con hooks:
-  Los hooks (stop_enforcer, posttool_validate) trabajan en paralelo
-  con el loop. El loop maneja la lógica de alto nivel (clasificar errores,
-  decidir recovery); los hooks manejan la lógica a nivel de herramienta.
-"""
-
 from __future__ import annotations
-
 import asyncio
 import logging
-import time
-from typing import Optional, Callable, Awaitable
-
-from .task_packet import TaskPacket, ExecutionMode, EffortLevel, EscalationPolicy
-from infrastructure.worker_lifecycle import WorkerLifecycle, WorkerState, FailureKind, classify_error
-from infrastructure.lane_events import LaneEvent, LaneEventType, lane_bus
+from enum import Enum, auto
+from typing import Callable, Awaitable, Optional
+from .context import AgentContext
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 5
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+class ExecutionMode(Enum):
+    """Modo de ejecución del pipeline."""
+    PLAN_ONLY   = "plan_only"    # Solo genera plan, no ejecuta ni modifica
+    SUPERVISED  = "supervised"   # Pide confirmación antes de acciones destructivas
+    AUTONOMOUS  = "autonomous"   # Ejecuta sin interrupciones hasta terminar
 
 
-# Tipo del runner de pipeline: async callable que toma (TaskPacket, contexto) -> resultado
-PipelineRunner = Callable[[TaskPacket, dict], Awaitable[dict]]
+class WorkerState(Enum):
+    """Estado del worker durante la ejecución del pipeline."""
+    SPAWNING  = auto()  # Inicializando
+    READY     = auto()  # Listo para recibir tarea
+    RUNNING   = auto()  # Ejecutando agente
+    BLOCKED   = auto()  # Esperando confirmación (modo SUPERVISED)
+    FAILED    = auto()  # Error irrecuperable
+    FINISHED  = auto()  # Completado exitosamente
 
 
-class LoopResult:
-    """Resultado de la ejecución del loop."""
-    def __init__(self, success: bool, output: dict, iterations: int,
-                 final_error: str = "", worker: WorkerLifecycle = None):
-        self.success     = success
-        self.output      = output
-        self.iterations  = iterations
-        self.final_error = final_error
-        self.worker      = worker
+class FailureKind(Enum):
+    """Tipo de fallo para determinar estrategia de recuperación."""
+    COMPILE      = "compile"       # Error de sintaxis/compilación
+    TEST         = "test"          # Tests fallaron
+    TOOL_RUNTIME = "tool_runtime"  # Error de herramienta (filesystem, git, etc.)
+    PROVIDER     = "provider"      # Error de API/LLM
+    TIMEOUT      = "timeout"       # Timeout de agente
+    UNKNOWN      = "unknown"       # Error no clasificado
 
-    def __repr__(self):
-        status = "✅ OK" if self.success else "❌ FAIL"
-        return f"LoopResult[{status} | iter={self.iterations} | error={self.final_error[:60]}]"
 
+# ---------------------------------------------------------------------------
+# LoopController
+# ---------------------------------------------------------------------------
 
 class LoopController:
     """
-    Controlador de loop de corrección autónoma.
+    Controlador de ejecución autónoma con loop de corrección.
 
     Uso:
-        controller = LoopController(pipeline_runner=maestro.run)
-        result = await controller.run(task_packet)
-        if result.success:
-            print(result.output)
-        else:
-            print(f"Falló en {result.iterations} intentos: {result.final_error}")
+        controller = LoopController(
+            mode=ExecutionMode.SUPERVISED,
+            max_iterations=5,
+        )
+        ctx = await controller.run(pipeline_fn, ctx)
+
+    El pipeline_fn es un callable async que recibe y retorna AgentContext.
+    En cada iteración, el controller:
+      1. Ejecuta el pipeline
+      2. Detecta el tipo de fallo (si lo hay)
+      3. Inyecta contexto del error + estrategia de recuperación
+      4. Reintenta si iterations < max_iterations
+      5. Escala al usuario si mode=SUPERVISED y el fallo requiere intervención
     """
 
-    def __init__(self,
-                 pipeline_runner: PipelineRunner,
-                 max_iterations:  int = MAX_ITERATIONS,
-                 on_plan_ready:   Optional[Callable[[str], Awaitable[bool]]] = None):
+    MAX_ITERATIONS_DEFAULT = 5
+
+    def __init__(
+        self,
+        mode: ExecutionMode = ExecutionMode.SUPERVISED,
+        max_iterations: int = MAX_ITERATIONS_DEFAULT,
+        confirm_fn: Optional[Callable[[str], Awaitable[bool]]] = None,
+    ):
         """
         Args:
-            pipeline_runner:  Función async que ejecuta el pipeline (Maestro.run)
-            max_iterations:   Máximo de intentos de corrección
-            on_plan_ready:    Callback async para mostrar plan al usuario y esperar aprobación.
-                              Recibe el plan como string, retorna True si aprobado.
+            mode: Modo de ejecución (SUPERVISED por defecto).
+            max_iterations: Máximo de reintentos del loop de corrección.
+            confirm_fn: Función async para pedir confirmación al usuario
+                        en modo SUPERVISED. Si None, se usa input() bloqueante.
         """
-        self.pipeline_runner = pipeline_runner
-        self.max_iterations  = max_iterations
-        self.on_plan_ready   = on_plan_ready
+        self.mode = mode
+        self.max_iterations = max_iterations
+        self.confirm_fn = confirm_fn or self._default_confirm
+        self._state = WorkerState.SPAWNING
+        self._iteration = 0
 
-    async def run(self, packet: TaskPacket) -> LoopResult:
+    @property
+    def state(self) -> WorkerState:
+        return self._state
+
+    def _transition(self, new_state: WorkerState) -> None:
+        logger.debug(f"WorkerState: {self._state.name} → {new_state.name}")
+        self._state = new_state
+
+    # ------------------------------------------------------------------
+    # Punto de entrada
+    # ------------------------------------------------------------------
+
+    async def run(
+        self,
+        pipeline_fn: Callable[[AgentContext], Awaitable[AgentContext]],
+        ctx: AgentContext,
+    ) -> AgentContext:
         """
-        Ejecuta el loop completo de una tarea.
+        Ejecuta el pipeline con loop de corrección autónomo.
 
-        Flujo:
-          PLAN_ONLY  -> generar plan -> mostrar al usuario -> retornar
-          SUPERVISED -> [plan] -> [aprobar] -> ejecutar con confirmaciones
-          AUTONOMOUS -> ejecutar sin interrupciones -> corregir si falla
+        Si mode=PLAN_ONLY, genera el plan y retorna sin ejecutar.
+        Si mode=SUPERVISED o AUTONOMOUS, ejecuta con reintentos.
         """
-        worker = WorkerLifecycle(
-            agent_name=f"loop_controller:{packet.pipeline}",
-            max_recovery_attempts=self.max_iterations,
-            on_state_change=self._on_state_change,
-        )
+        self._transition(WorkerState.READY)
 
-        lane_bus.emit(LaneEvent.started(
-            "loop_controller",
-            f"Iniciando pipeline '{packet.pipeline}' | mode={packet.execution_mode.value} | effort={packet.effort.value}",
-            session_id=packet.session_id,
-            pipeline=packet.pipeline,
-        ))
+        if self.mode == ExecutionMode.PLAN_ONLY:
+            logger.info("LoopController: modo PLAN_ONLY — generando plan sin ejecutar")
+            ctx.set_data("execution_mode", "plan_only")
+            ctx.log("loop_controller", "Modo PLAN_ONLY: solo se genera el plan de acción")
+            return ctx
 
-        worker.transition(WorkerState.READY)
+        self._transition(WorkerState.RUNNING)
+        ctx.set_data("execution_mode", self.mode.value)
+        ctx.set_data("loop_max_iterations", self.max_iterations)
 
-        # --- FASE DE PLAN ---
-        if packet.execution_mode in (ExecutionMode.PLAN_ONLY, ExecutionMode.SUPERVISED):
-            plan_result = await self._generate_plan(packet, worker)
-            if not plan_result.get("approved", True):
-                return LoopResult(False, plan_result, 0, "Plan rechazado por el usuario", worker)
-            if packet.is_plan_only:
-                return LoopResult(True, plan_result, 0, worker=worker)
-
-        # --- LOOP DE EJECUCIÓN Y CORRECCIÓN ---
-        context    = {"packet": packet.to_dict(), "iteration": 0}
-        last_error = ""
-
-        for iteration in range(1, self.max_iterations + 1):
-            context["iteration"] = iteration
-            worker.transition(WorkerState.RUNNING)
-
-            lane_bus.emit(LaneEvent.running(
-                "loop_controller",
-                f"Iteración {iteration}/{self.max_iterations}",
-                iteration=iteration,
-                pipeline=packet.pipeline,
-            ))
+        while self._iteration < self.max_iterations:
+            self._iteration += 1
+            ctx.set_data("loop_iteration", self._iteration)
+            logger.info(
+                f"LoopController: iteración {self._iteration}/{self.max_iterations} "
+                f"| mode={self.mode.value}"
+            )
 
             try:
-                result = await self.pipeline_runner(packet, context)
+                ctx = await pipeline_fn(ctx)
 
-                if result.get("success", True):
-                    worker.transition(WorkerState.FINISHED)
-                    lane_bus.emit(LaneEvent.green(
+                # Pipeline completado sin errores
+                if ctx.status != "failed" and not ctx.error:
+                    self._transition(WorkerState.FINISHED)
+                    ctx.log(
                         "loop_controller",
-                        f"Pipeline completado en {iteration} iteración(es)",
-                        pipeline=packet.pipeline,
-                    ))
-                    return LoopResult(True, result, iteration, worker=worker)
+                        f"Pipeline completado en {self._iteration} iteración(es)",
+                    )
+                    return ctx
 
-                # Pipeline retornó success=False: tratar como error recuperable
-                error_msg = result.get("error", "Pipeline retornó fallo sin detalle")
-                raise RuntimeError(error_msg)
+                # Pipeline completó pero con errores en agentes
+                failure_kind = self._classify_failure(ctx)
+                logger.warning(
+                    f"LoopController: pipeline terminó con errores "
+                    f"({failure_kind.value}) en iteración {self._iteration}"
+                )
 
-            except Exception as exc:
-                last_error      = str(exc)
-                failure_kind    = classify_error(exc)
-                error_context   = self._build_error_context(exc, failure_kind, context)
+            except Exception as e:
+                failure_kind = self._classify_failure(ctx, str(e))
+                ctx.error = str(e)
+                logger.error(
+                    f"LoopController: excepción en iteración {self._iteration}: {e}"
+                )
 
-                worker.transition(WorkerState.FAILED, failure_kind, last_error[:200])
+            # ¿Podemos recuperarnos?
+            if self._iteration >= self.max_iterations:
+                logger.error(
+                    f"LoopController: máximo de iteraciones ({self.max_iterations}) alcanzado"
+                )
+                self._transition(WorkerState.FAILED)
+                break
 
-                lane_bus.emit(LaneEvent.red(
-                    "loop_controller",
-                    f"[{failure_kind.value}] {last_error[:150]}",
-                    iteration=iteration,
-                    metadata={"failure_kind": failure_kind.value, "error": last_error[:300]},
-                    pipeline=packet.pipeline,
-                ))
+            # Modo SUPERVISED: preguntar al usuario si continuar
+            if self.mode == ExecutionMode.SUPERVISED:
+                self._transition(WorkerState.BLOCKED)
+                should_continue = await self.confirm_fn(
+                    f"\n⚠️  Pipeline falló ({failure_kind.value}) en iteración "
+                    f"{self._iteration}.\n¿Reintentar con contexto de error? [s/N]: "
+                )
+                if not should_continue:
+                    logger.info("LoopController: usuario canceló el reintento")
+                    self._transition(WorkerState.FAILED)
+                    return ctx
+                self._transition(WorkerState.RUNNING)
 
-                if not worker.can_recover():
-                    break
+            # Inyectar contexto de recuperación antes del siguiente intento
+            ctx = self._inject_recovery_context(ctx, failure_kind)
+            # Resetear estado para el próximo intento
+            ctx.status = "running"
+            ctx.error = None
+            ctx.failed_agents.clear()
+            ctx.retry_counts.clear()
 
-                # Inyectar contexto del error en el próximo intento
-                context["last_error"]       = last_error
-                context["last_error_kind"]  = failure_kind.value
-                context["error_context"]    = error_context
+            # Backoff antes del reintento
+            await asyncio.sleep(1.0)
 
-                worker.recover()
+        return ctx
 
-                lane_bus.emit(LaneEvent.recovered(
-                    "loop_controller",
-                    iteration,
-                    pipeline=packet.pipeline,
-                ))
+    # ------------------------------------------------------------------
+    # Clasificación de fallos
+    # ------------------------------------------------------------------
 
-                # Back-off exponencial breve entre intentos
-                await asyncio.sleep(min(2 ** (iteration - 1), 8))
+    def _classify_failure(
+        self, ctx: AgentContext, error_msg: str = ""
+    ) -> FailureKind:
+        """
+        Determina el tipo de fallo para elegir la estrategia de recuperación.
 
-        # Agotar intentos
-        worker.abort(f"Máximo de iteraciones ({self.max_iterations}) alcanzado")
-        lane_bus.emit(LaneEvent.failed(
+        Analiza:
+          - ctx.error (mensaje de error del pipeline)
+          - ctx.failed_agents (agentes que fallaron)
+          - error_msg (excepción no capturada)
+        """
+        text = (ctx.error or error_msg or "").lower()
+
+        # Errores de compilación/sintaxis
+        if any(kw in text for kw in [
+            "syntaxerror", "indentationerror", "nameerror",
+            "importerror", "modulenotfounderror", "syntax",
+        ]):
+            return FailureKind.COMPILE
+
+        # Tests fallando
+        if any(kw in text for kw in [
+            "assertionerror", "test failed", "pytest", "failed",
+            "assert", "expected", "test_",
+        ]):
+            return FailureKind.TEST
+
+        # Error de provider/API
+        if any(kw in text for kw in [
+            "429", "rate limit", "quota", "provider", "api",
+            "connection", "timeout", "todos los providers",
+        ]):
+            return FailureKind.PROVIDER
+
+        # Timeout
+        if "timeout" in text or "timed out" in text:
+            return FailureKind.TIMEOUT
+
+        # Error de herramienta
+        if any(kw in text for kw in [
+            "permissionerror", "filenotfounderror", "oserror",
+            "git", "filesystem", "sandbox",
+        ]):
+            return FailureKind.TOOL_RUNTIME
+
+        return FailureKind.UNKNOWN
+
+    def _inject_recovery_context(
+        self, ctx: AgentContext, failure_kind: FailureKind
+    ) -> AgentContext:
+        """
+        Inyecta hints de recuperación en ctx.data para que los agentes
+        lean en el próximo intento y ajusten su comportamiento.
+        """
+        recovery_hints = {
+            FailureKind.COMPILE: (
+                "El código generado tiene errores de sintaxis. "
+                "Revisa indentación, imports y nombres de variables. "
+                "Asegúrate de que el código sea Python válido."
+            ),
+            FailureKind.TEST: (
+                "Los tests fallaron. Analiza el output del test, "
+                "identifica qué función o clase falla y corrígela "
+                "sin romper los tests que sí pasan."
+            ),
+            FailureKind.PROVIDER: (
+                "El provider LLM no está disponible. "
+                "Verifica OLLAMA_ENABLED, GROQ_API_KEY, GEMINI_API_KEY en .env. "
+                "Si usas Ollama, asegúrate de que el servicio está corriendo."
+            ),
+            FailureKind.TOOL_RUNTIME: (
+                "Una herramienta del sistema falló (filesystem, git, etc.). "
+                "Verifica permisos de archivos y que el sandbox esté configurado "
+                "correctamente. Revisa config.yaml sección 'security'."
+            ),
+            FailureKind.TIMEOUT: (
+                "La tarea tomó demasiado tiempo. Divide la tarea en partes más "
+                "pequeñas o usa --effort min para respuestas más rápidas."
+            ),
+            FailureKind.UNKNOWN: (
+                "Error desconocido en el pipeline. "
+                "Revisa los logs detallados con python main.py --history."
+            ),
+        }
+
+        hint = recovery_hints.get(failure_kind, recovery_hints[FailureKind.UNKNOWN])
+        ctx.set_data("_recovery_hint", hint)
+        ctx.set_data("_failure_kind", failure_kind.value)
+        ctx.set_data("_loop_iteration", self._iteration)
+        ctx.log(
             "loop_controller",
-            f"Agotados {self.max_iterations} intentos. Último error: {last_error[:200]}",
-            pipeline=packet.pipeline,
-        ))
+            f"Iteración {self._iteration} falló ({failure_kind.value}): "
+            f"inyectando hint de recuperación → reintentando",
+        )
+        return ctx
 
-        await self._handle_escalation(packet, last_error)
+    # ------------------------------------------------------------------
+    # Confirmación de usuario (modo SUPERVISED)
+    # ------------------------------------------------------------------
 
-        return LoopResult(False, {}, self.max_iterations, last_error, worker)
-
-    # --- Métodos internos ---
-
-    async def _generate_plan(self, packet: TaskPacket, worker: WorkerLifecycle) -> dict:
-        """Genera un plan estructurado y opcionalmente espera aprobación."""
-        worker.transition(WorkerState.RUNNING)
-
-        lane_bus.emit(LaneEvent.plan_ready(
-            f"Generando plan para: {packet.objective[:80]}...",
-            pipeline=packet.pipeline,
-        ))
-
-        try:
-            # Ejecutar pipeline en modo PLAN_ONLY para generar el plan
-            plan_packet = TaskPacket(
-                objective=packet.objective,
-                pipeline=packet.pipeline,
-                execution_mode=ExecutionMode.PLAN_ONLY,
-                effort=packet.effort,
-                context_files=packet.context_files,
-                scope=packet.scope,
-                session_id=packet.session_id,
-            )
-            result = await self.pipeline_runner(plan_packet, {"mode": "plan"})
-            plan_text = result.get("plan", result.get("output", "Plan generado"))
-
-        except Exception as e:
-            plan_text = f"Error generando plan: {e}"
-            logger.warning(f"Error en fase de plan: {e}")
-
-        approved = True
-        if self.on_plan_ready and not packet.is_autonomous:
-            approved = await self.on_plan_ready(plan_text)
-
-        if approved:
-            lane_bus.emit(LaneEvent.approved(pipeline=packet.pipeline))
-
-        return {"plan": plan_text, "approved": approved}
-
-    def _build_error_context(self, exc: Exception, kind: FailureKind, context: dict) -> str:
-        """
-        Construye el contexto del error para inyectar al siguiente intento.
-        El contexto se adapta según el tipo de error.
-        """
-        base = f"Error en iteración {context.get('iteration', '?')}: {str(exc)[:500]}"
-
-        if kind == FailureKind.COMPILE:
-            return (
-                f"{base}\n\n"
-                "INSTRUCCIÓN: Hay un error de sintaxis o importación. "
-                "Revisa el código generado, corrige el error y vuelve a intentarlo. "
-                "No cambies la lógica, solo corrige el error de código."
-            )
-        elif kind == FailureKind.TEST:
-            return (
-                f"{base}\n\n"
-                "INSTRUCCIÓN: Los tests fallaron. "
-                "Revisa qué assertions fallan y corrige la implementación para que pasen. "
-                "No modifiques los tests, solo la implementación."
-            )
-        elif kind == FailureKind.PROVIDER:
-            return (
-                f"{base}\n\n"
-                "INSTRUCCIÓN: El proveedor de LLM falló. "
-                "El sistema intentará con el proveedor de fallback automáticamente."
-            )
-        elif kind == FailureKind.TIMEOUT:
-            return (
-                f"{base}\n\n"
-                "INSTRUCCIÓN: La tarea tomó demasiado tiempo. "
-                "Divide la tarea en pasos más pequeños."
-            )
-        else:
-            return f"{base}\n\nINSTRUCCIÓN: Revisa el error y corrigió el problema antes de reintentar."
-
-    async def _handle_escalation(self, packet: TaskPacket, error: str) -> None:
-        """Maneja la política de escalamiento cuando se agotan los intentos."""
-        policy = packet.escalation_policy
-        if policy == EscalationPolicy.NOTIFY:
-            logger.error(
-                f"ESCALAMIENTO [{packet.task_id}]: {packet.pipeline} falló "
-                f"después de {self.max_iterations} intentos.\n"
-                f"Error final: {error[:300]}"
-            )
-        elif policy == EscalationPolicy.ABORT:
-            raise RuntimeError(f"Pipeline '{packet.pipeline}' abortado: {error[:200]}")
-        # SKIP: no hacer nada, continuar silenciosamente
-
-    def _on_state_change(self, agent: str, prev: WorkerState, new: WorkerState) -> None:
-        """Callback de cambio de estado para logging."""
-        logger.debug(f"[{agent}] {prev.value} -> {new.value}")
+    @staticmethod
+    async def _default_confirm(prompt: str) -> bool:
+        """Confirmación bloqueante en terminal. En producción, reemplazar por WebSocket."""
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: input(prompt).strip().lower()
+        )
+        return response in ("s", "si", "sí", "y", "yes", "1")

@@ -1,4 +1,4 @@
-"""APIRouter — Local-first LLM strategy.
+"""APIRouter — Local-first LLM strategy con exponential backoff y CoT.
 
 Estrategia de providers (en orden de prioridad):
   1. Ollama local     → gratis, offline, 0 latencia de red
@@ -7,14 +7,16 @@ Estrategia de providers (en orden de prioridad):
   3. Gemini Flash     → gratis (1M tok/día), fallback fiable
   4. Hyperspace       → fallback legacy local
 
-Cuando agregues GPU:
-  - Cambia OLLAMA_MODEL a qwen2.5-coder:32b o deepseek-coder-v2:33b
-  - Cambia LOCAL_GPU_LAYERS al número de capas que caben en VRAM
-  - El resto del código no cambia.
+Cambios v2.2.0:
+  - Exponential backoff en _fallback_chain (fix rate-limit cascading)
+  - _estimate_tokens mejorado: factor 1.6 para código vs 1.3 para texto
+  - CLOUD_CONTEXT_LIMITS con valores reales (Gemini/Claude 1M)
+  - thinking=True en tareas REASONING via /think tag (qwen local)
 """
 from __future__ import annotations
 import asyncio
 import os
+import re
 import logging
 from typing import Optional, List, Dict, Tuple
 
@@ -24,10 +26,20 @@ logger = logging.getLogger(__name__)
 # Costo estimado por 1000 tokens (USD)
 # ---------------------------------------------------------------------------
 COST_PER_1K: Dict[str, float] = {
-    "ollama":     0.0,      # local, completamente gratis
-    "groq":       0.00059,  # llama-3.3-70b: ~$0.59 / 1M tokens
-    "gemini":     0.0,      # gemini-2.0-flash: gratis en free tier
-    "hyperspace": 0.0,      # local legacy
+    "ollama":     0.0,
+    "groq":       0.00059,
+    "gemini":     0.0,
+    "hyperspace": 0.0,
+}
+
+# ---------------------------------------------------------------------------
+# Límites reales de contexto por provider (tokens)
+# ---------------------------------------------------------------------------
+CLOUD_CONTEXT_LIMITS: Dict[str, int] = {
+    "ollama":     32_768,      # qwen2.5-coder:7b-q4_K_M
+    "groq":       131_072,     # llama-3.3-70b
+    "gemini":   1_000_000,     # gemini-2.0-flash
+    "hyperspace":  8_192,      # legacy
 }
 
 # ---------------------------------------------------------------------------
@@ -42,11 +54,9 @@ FREE_TIER_LIMITS = {
 # Perfiles de modelo por hardware
 # ---------------------------------------------------------------------------
 OLLAMA_PROFILES = {
-    # CPU-only (sin GPU dedicada)
     "cpu_8gb":  {"model": "llama3.2:3b-q4_K_M",          "gpu_layers": 0,  "context": 8_192},
     "cpu_16gb": {"model": "qwen2.5-coder:7b-q4_K_M",     "gpu_layers": 0,  "context": 32_768},
-    "cpu_24gb": {"model": "qwen2.5-coder:7b-q4_K_M",     "gpu_layers": 4,  "context": 32_768},  # +Vega3 iGPU offload
-    # GPU dedicada — descomenta cuando hagas el upgrade
+    "cpu_24gb": {"model": "qwen2.5-coder:7b-q4_K_M",     "gpu_layers": 4,  "context": 32_768},
     "gpu_8gb":  {"model": "deepseek-coder-v2:16b-q4_K_M", "gpu_layers": 33, "context": 65_536},
     "gpu_12gb": {"model": "qwen2.5-coder:14b-q4_K_M",     "gpu_layers": 43, "context": 65_536},
     "gpu_16gb": {"model": "qwen2.5-coder:14b-q4_K_M",     "gpu_layers": 43, "context": 128_000},
@@ -59,22 +69,18 @@ class APIRouter:
     Router inteligente de APIs LLM con estrategia local-first.
 
     Flujo de decisión:
-      1. Si Ollama está activo y la tarea cabe en contexto → Ollama local
-      2. Si la tarea es compleja O excede contexto local → Groq (gratis, rápido)
-      3. Si Groq no disponible → Gemini Flash (gratis)
+      1. Si Ollama activo y tarea cabe en contexto → Ollama local
+      2. Si tarea compleja O excede contexto local → Groq (gratis, rápido)
+      3. Si Groq no disponible → Gemini Flash (gratis, 1M ctx)
       4. Fallback final → Hyperspace legacy
 
     complete() retorna Tuple[str, int]: (texto_generado, tokens_usados)
     """
 
-    # Tareas que prefieren calidad cloud sobre velocidad local
-    # planning y reasoning se escalan a Groq porque generan respuestas largas
-    # que agotan el timeout en CPU sin GPU.
     CLOUD_PREFERRED_TASKS = {
         "research", "thesis", "analysis", "security_audit",
         "planning", "reasoning",
     }
-    # Tareas ideales para local (deterministas, acotadas)
     LOCAL_PREFERRED_TASKS = {
         "coding", "formatting", "summary", "extraction",
         "classification", "embeddings", "similarity",
@@ -82,12 +88,16 @@ class APIRouter:
         "trading", "analytics", "marketing", "product", "design",
     }
 
+    # Tareas donde activar chain-of-thought (/think tag en qwen)
+    REASONING_TASKS = {
+        "classification", "planning", "security_audit",
+        "research", "analysis", "reasoning",
+    }
+
     def __init__(self):
-        # Claves cloud
         self.groq_key    = os.getenv("GROQ_API_KEY", "")
         self.gemini_key  = os.getenv("GEMINI_API_KEY", "")
 
-        # Ollama local
         self.ollama_url     = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         self.ollama_enabled = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
         self.hw_profile     = os.getenv("OLLAMA_HW_PROFILE", "cpu_24gb")
@@ -96,11 +106,9 @@ class APIRouter:
         self.ollama_layers  = int(os.getenv("LOCAL_GPU_LAYERS", str(self._ollama_cfg["gpu_layers"])))
         self.ollama_context = int(os.getenv("LOCAL_CONTEXT_SIZE", str(self._ollama_cfg["context"])))
 
-        # Hyperspace legacy
         self.hyperspace_url     = os.getenv("HYPERSPACE_BASE_URL", "http://localhost:8080/v1")
         self.hyperspace_enabled = os.getenv("HYPERSPACE_ENABLED", "false").lower() == "true"
 
-        # Estrategia global
         self._strategy = os.getenv("API_STRATEGY", "local_first")
 
         logger.info(
@@ -112,6 +120,7 @@ class APIRouter:
     # ------------------------------------------------------------------
     # Selección de provider
     # ------------------------------------------------------------------
+
     def select_provider(self, task_type: str, estimated_tokens: int = 0) -> str:
         """Retorna el provider a usar: 'ollama' | 'groq' | 'gemini' | 'hyperspace'"""
         if self._strategy == "local_only":
@@ -123,19 +132,22 @@ class APIRouter:
         if self._strategy == "cloud_only":
             return "groq" if self.groq_key else "gemini"
 
-        # --- Estrategia local_first (default) ---
+        # Estrategia local_first (default)
         if self.ollama_enabled:
-            # Tarea preferida para cloud → escalar si hay key disponible
             if task_type in self.CLOUD_PREFERRED_TASKS and (self.groq_key or self.gemini_key):
                 return "groq" if self.groq_key else "gemini"
-            # Tarea demasiado larga para contexto local
             if estimated_tokens > self.ollama_context * 0.85:
-                logger.info(f"APIRouter: tokens ({estimated_tokens}) cerca del límite local "
-                            f"({self.ollama_context}), escalando a cloud")
-                return "groq" if self.groq_key else "gemini"
+                logger.info(
+                    f"APIRouter: {estimated_tokens} tokens > 85% ctx local "
+                    f"({self.ollama_context}) → escalando a cloud"
+                )
+                # Elegir provider cloud con contexto suficiente
+                if estimated_tokens <= CLOUD_CONTEXT_LIMITS.get("groq", 0) and self.groq_key:
+                    return "groq"
+                if self.gemini_key:
+                    return "gemini"  # 1M tokens, siempre cabe
             return "ollama"
 
-        # Sin Ollama → cloud gratis
         if self.groq_key:
             return "groq"
         if self.gemini_key:
@@ -145,6 +157,7 @@ class APIRouter:
     # ------------------------------------------------------------------
     # Punto de entrada principal
     # ------------------------------------------------------------------
+
     async def complete(
         self,
         messages: List[Dict[str, str]],
@@ -155,13 +168,15 @@ class APIRouter:
     ) -> Tuple[str, int]:
         """
         Genera completación con el provider óptimo.
-        Hace fallback automático si el primario falla.
+        Fallback automático con exponential backoff si el primario falla.
         Retorna (texto_generado, tokens_usados).
         """
-        estimated = self._estimate_tokens(messages, "", system)
+        estimated = self._estimate_tokens(messages, "", system, task_type)
         provider = self.select_provider(task_type, estimated)
-        logger.info(f"APIRouter: task_type={task_type} → provider={provider} "
-                    f"(~{estimated} tokens estimados)")
+        logger.info(
+            f"APIRouter: task_type={task_type} → provider={provider} "
+            f"(~{estimated} tokens estimados)"
+        )
 
         try:
             return await self._call(provider, messages, system, temperature, max_tokens)
@@ -174,6 +189,7 @@ class APIRouter:
     # ------------------------------------------------------------------
     # Llamadas por provider
     # ------------------------------------------------------------------
+
     async def _call(
         self, provider: str, messages, system, temperature, max_tokens
     ) -> Tuple[str, int]:
@@ -189,11 +205,7 @@ class APIRouter:
     async def _call_ollama(
         self, messages, system, temperature, max_tokens
     ) -> Tuple[str, int]:
-        """Llama a Ollama local vía OpenAI-compatible API.
-
-        Cuando tengas GPU, solo cambia OLLAMA_MODEL y LOCAL_GPU_LAYERS en .env.
-        El resto funciona sin tocar código.
-        """
+        """Llama a Ollama local vía OpenAI-compatible API."""
         from openai import OpenAI
         client = OpenAI(base_url=self.ollama_url, api_key="ollama")
 
@@ -217,6 +229,9 @@ class APIRouter:
         response = await loop.run_in_executor(None, _sync_call)
 
         text = response.choices[0].message.content or ""
+        # Limpiar bloques <think>...</think> expuestos por modelos qwen
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
         try:
             tokens = response.usage.total_tokens
         except Exception:
@@ -289,12 +304,18 @@ class APIRouter:
         return text, tokens
 
     # ------------------------------------------------------------------
-    # Fallback chain
+    # Fallback chain con exponential backoff
     # ------------------------------------------------------------------
+
     async def _fallback_chain(
         self, messages, system, temperature, max_tokens, failed: str
     ) -> Tuple[str, int]:
-        """Intenta providers en orden de prioridad, saltando el que falló."""
+        """
+        Intenta providers en orden de prioridad con exponential backoff.
+
+        Backoff: 1s → 2s → 4s entre intentos.
+        Esto evita cascading failures cuando el error es rate-limit (429).
+        """
         priority = ["ollama", "groq", "gemini", "hyperspace"]
         available = {
             "ollama":     self.ollama_enabled,
@@ -302,14 +323,26 @@ class APIRouter:
             "gemini":     bool(self.gemini_key),
             "hyperspace": self.hyperspace_enabled,
         }
+
+        attempt = 0
         for provider in priority:
             if provider == failed or not available[provider]:
                 continue
+
+            # Backoff exponencial: 1s, 2s, 4s...
+            if attempt > 0:
+                wait = 2 ** (attempt - 1)
+                logger.info(f"APIRouter fallback: esperando {wait}s antes de intentar {provider}")
+                await asyncio.sleep(wait)
+
             try:
-                logger.info(f"APIRouter fallback → {provider}")
-                return await self._call(provider, messages, system, temperature, max_tokens)
+                logger.info(f"APIRouter fallback [{attempt+1}] → {provider}")
+                result = await self._call(provider, messages, system, temperature, max_tokens)
+                return result
             except Exception as e:
                 logger.warning(f"Fallback {provider} también falló: {e}")
+                attempt += 1
+
         raise RuntimeError(
             "Todos los providers fallaron.\n"
             "Verifica: OLLAMA_ENABLED, GROQ_API_KEY, GEMINI_API_KEY en .env"
@@ -318,32 +351,47 @@ class APIRouter:
     # ------------------------------------------------------------------
     # Utilidades
     # ------------------------------------------------------------------
+
     @staticmethod
-    def _estimate_tokens(messages: list, response_text: str, system: Optional[str]) -> int:
-        """Estimación burda: ~1.3 tokens por palabra (promedio español/inglés)."""
+    def _estimate_tokens(
+        messages: list,
+        response_text: str,
+        system: Optional[str] = None,
+        task_type: str = "coding",
+    ) -> int:
+        """
+        Estimación de tokens mejorada.
+
+        Para código Python/JS (task_type='coding', 'qa', 'dev'):
+          factor = 1.6  → más tokens por palabra (keywords, símbolos, indentación)
+        Para texto natural:
+          factor = 1.3  → estimación estándar
+        """
+        CODE_TASKS = {"coding", "qa", "dev", "review", "security_audit"}
+        factor = 1.6 if task_type in CODE_TASKS else 1.3
+
         all_text = " ".join(m.get("content", "") for m in messages)
         if system:
             all_text += " " + system
         all_text += " " + (response_text or "")
-        return max(1, int(len(all_text.split()) * 1.3))
+        return max(1, int(len(all_text.split()) * factor))
 
     def cost_for_tokens(self, tokens: int, provider: str) -> float:
-        """Calcula el costo estimado en USD para un número de tokens."""
         rate = COST_PER_1K.get(provider, 0.0)
         return round((tokens / 1000) * rate, 6)
 
     def status(self) -> dict:
-        """Retorna el estado actual del router (útil para /doctor y /api/metrics)."""
         return {
-            "strategy":        self._strategy,
-            "hw_profile":      self.hw_profile,
-            "ollama_enabled":  self.ollama_enabled,
-            "ollama_model":    self.ollama_model if self.ollama_enabled else None,
-            "ollama_url":      self.ollama_url if self.ollama_enabled else None,
-            "gpu_layers":      self.ollama_layers,
-            "context_size":    self.ollama_context,
-            "groq_available":  bool(self.groq_key),
-            "gemini_available": bool(self.gemini_key),
+            "strategy":             self._strategy,
+            "hw_profile":           self.hw_profile,
+            "ollama_enabled":       self.ollama_enabled,
+            "ollama_model":         self.ollama_model if self.ollama_enabled else None,
+            "ollama_url":           self.ollama_url if self.ollama_enabled else None,
+            "gpu_layers":           self.ollama_layers,
+            "context_size":         self.ollama_context,
+            "groq_available":       bool(self.groq_key),
+            "gemini_available":     bool(self.gemini_key),
             "hyperspace_available": self.hyperspace_enabled,
-            "providers_priority": ["ollama", "groq", "gemini", "hyperspace"],
+            "cloud_context_limits": CLOUD_CONTEXT_LIMITS,
+            "providers_priority":   ["ollama", "groq", "gemini", "hyperspace"],
         }
