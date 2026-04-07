@@ -4,15 +4,22 @@ Cadena de pensamiento activa:
   classify_task()            → scoring rápido por keywords
   _resolve_tie()             → detecta empates y escala al LLM
   classify_task_with_llm()   → LLM con chain-of-thought explícito (thinking)
-  run()                      → orquesta memoria + pipeline + loop controller
+  run()                      → orquesta memoria + LoopController + pipeline
+
+Modos de ejecución (Fase 12):
+  default        → SUPERVISED  (pide confirmación antes de reintentar)
+  --auto         → AUTONOMOUS  (ejecuta sin interrupciones hasta terminar)
+  --plan         → PLAN_ONLY   (genera plan, no modifica nada)
 """
 from __future__ import annotations
 import os
+import re
 import logging
-from typing import Optional, Dict, List, Tuple
+from typing import Callable, Awaitable, List, Optional, Dict, Tuple
 from .context import AgentContext
 from .api_router import APIRouter
 from .pipeline_router import PipelineRouter
+from .loop_controller import LoopController, ExecutionMode
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +30,9 @@ class Maestro:
 
     Responsabilidades:
     1. Clasificar la tarea (keyword scoring → desempate LLM con CoT)
-    2. Consultar memoria (¿existe algo similar ya resuelto?)
+    2. Consultar memoria episódica (¿existe algo similar ya resuelto?)
     3. Construir el pipeline de agentes correcto
-    4. Ejecutar el pipeline vía PipelineRouter + LoopController (Fase 12)
+    4. Ejecutar el pipeline vía LoopController + PipelineRouter
     5. Guardar resultados en memoria
     6. Reportar al usuario
     """
@@ -101,7 +108,12 @@ class Maestro:
         self.api_router = APIRouter()
         self.pipeline_router = PipelineRouter()
         self.memory = memory_manager
-        logger.info(f"Maestro iniciado | Ambiente: {self.environment}")
+        # Número máximo de iteraciones del loop de corrección (env override)
+        self.max_loop_iterations = int(os.getenv("MAX_LOOP_ITERATIONS", "5"))
+        logger.info(
+            f"Maestro iniciado | ambiente={self.environment} "
+            f"| max_loop_iterations={self.max_loop_iterations}"
+        )
 
     # ------------------------------------------------------------------
     # Clasificación con cadena de pensamiento
@@ -126,11 +138,8 @@ class Maestro:
         best_task, best_score = sorted_tasks[0]
         second_task, second_score = sorted_tasks[1] if len(sorted_tasks) > 1 else ("", -1)
 
-        # Empate: dos pipelines con el mismo score máximo
         tie = best_score > 0 and best_score == second_score
-        # Score bajo: no hay evidencia suficiente para confiar sin LLM
         low_confidence = best_score < self._CONFIDENT_SCORE_THRESHOLD
-
         needs_llm = tie or low_confidence
 
         if tie:
@@ -156,18 +165,14 @@ class Maestro:
         """
         Clasificación con cadena de pensamiento (chain-of-thought).
 
-        El LLM razona en voz alta (<thinking>) antes de responder,
-        lo que reduce errores en casos ambiguos. Compatible con:
-          - qwen2.5-coder via /think tag (Ollama local)
-          - llama-3.3-70b vía Groq (razonamiento implícito)
-          - gemini-2.0-flash (razonamiento interno)
+        El tag /think activa razonamiento interno en qwen local.
+        Groq y Gemini usan razonamiento implícito.
         """
         valid_types = {
             "dev", "research", "content", "office", "qa", "pm", "trading",
             "analytics", "marketing", "product", "security_audit", "design",
         }
 
-        # Si hay candidatos específicos por empate, mencionarlos en el prompt
         candidate_hint = ""
         if candidates and len(candidates) >= 2:
             candidate_hint = (
@@ -175,8 +180,6 @@ class Maestro:
                 "Decide cuál encaja MEJOR con la tarea concreta."
             )
 
-        # Prompt con chain-of-thought explícito
-        # El tag /think activa razonamiento interno en modelos qwen locales
         prompt = f"""/think
 Análisis de clasificación de tarea:
 
@@ -211,8 +214,6 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
             max_tokens=20,
         )
 
-        # Limpiar respuesta: quitar bloques <thinking>...</thinking> si el modelo los expone
-        import re
         clean = re.sub(r"<thinking>.*?</thinking>", "", result, flags=re.DOTALL)
         task_type = clean.strip().lower().split()[0] if clean.strip() else "dev"
         task_type = task_type.strip(".,;:")
@@ -238,15 +239,25 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
         input_repo: Optional[str] = None,
         output_path: Optional[str] = None,
         auto_mode: bool = False,
+        plan_mode: bool = False,
     ) -> AgentContext:
         """
         Punto de entrada principal.
+
+        Args:
+            user_input:   Tarea en lenguaje natural del usuario.
+            task_type:    Forzar pipeline sin clasificar (opcional).
+            input_file:   Archivo de entrada para el pipeline.
+            input_repo:   Repositorio de entrada para el pipeline.
+            output_path:  Directorio de salida.
+            auto_mode:    Si True → ExecutionMode.AUTONOMOUS (CLI --auto).
+            plan_mode:    Si True → ExecutionMode.PLAN_ONLY  (CLI --plan).
 
         Flujo:
           1. Crear contexto de sesión
           2. Clasificar tarea (keyword → CoT LLM si hay ambigüedad)
           3. Consultar memoria episódica
-          4. Ejecutar pipeline
+          4. Ejecutar pipeline con LoopController
           5. Persistir sesión
         """
         ctx = AgentContext(
@@ -265,12 +276,6 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
             best_task, best_score, needs_llm = self.classify_task(user_input)
 
             if needs_llm:
-                # Determinar candidatos para el hint de desempate
-                sorted_scores = sorted(
-                    {t: 0 for t in self.TASK_KEYWORDS}.items(),
-                    key=lambda x: x[1], reverse=True
-                )
-                # Recalcular para tener los scores reales
                 real_scores: Dict[str, int] = {t: 0 for t in self.TASK_KEYWORDS}
                 lower = user_input.lower()
                 for t, kws in self.TASK_KEYWORDS.items():
@@ -300,9 +305,9 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
                     f"Memoria: encontrado contexto previo ({len(similar)} entradas)",
                 )
 
-        # --- Ejecución del pipeline ---
+        # --- Ejecución con LoopController ---
         try:
-            ctx = await self._execute_pipeline(ctx)
+            ctx = await self._execute_pipeline(ctx, auto_mode=auto_mode, plan_mode=plan_mode)
             ctx.finish("completed")
             ctx.log("maestro", f"Pipeline completado en {ctx.duration_seconds:.1f}s")
         except Exception as e:
@@ -318,11 +323,23 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
         return ctx
 
     # ------------------------------------------------------------------
-    # Ejecución de pipeline
+    # Ejecución de pipeline — conectado al LoopController
     # ------------------------------------------------------------------
 
-    async def _execute_pipeline(self, ctx: AgentContext) -> AgentContext:
-        """Construye el pipeline correcto y lo ejecuta."""
+    async def _execute_pipeline(
+        self,
+        ctx: AgentContext,
+        auto_mode: bool = False,
+        plan_mode: bool = False,
+    ) -> AgentContext:
+        """
+        Construye el pipeline y lo ejecuta con LoopController.
+
+        Selección de ExecutionMode:
+          plan_mode=True  → PLAN_ONLY   (sin ejecución real)
+          auto_mode=True  → AUTONOMOUS  (sin confirmaciones)
+          default         → SUPERVISED  (confirma antes de reintentar)
+        """
         pipeline_map = {
             "dev":            self._build_dev_pipeline,
             "research":       self._build_research_pipeline,
@@ -344,13 +361,42 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
 
         sequential_agents, parallel_agents, mode = builder()
 
+        # Construir el callable del pipeline
         if mode == "parallel_then_sequential":
-            return await self.pipeline_router.run_parallel_then_sequential(
-                parallel_agents=parallel_agents,
-                sequential_agents=sequential_agents,
-                ctx=ctx,
-            )
-        return await self.pipeline_router.run_sequential(sequential_agents, ctx)
+            async def pipeline_fn(c: AgentContext) -> AgentContext:
+                return await self.pipeline_router.run_parallel_then_sequential(
+                    parallel_agents=parallel_agents,
+                    sequential_agents=sequential_agents,
+                    ctx=c,
+                )
+        else:
+            async def pipeline_fn(c: AgentContext) -> AgentContext:
+                return await self.pipeline_router.run_sequential(sequential_agents, c)
+
+        # Seleccionar modo de ejecución
+        if plan_mode:
+            exec_mode = ExecutionMode.PLAN_ONLY
+        elif auto_mode:
+            exec_mode = ExecutionMode.AUTONOMOUS
+        else:
+            exec_mode = ExecutionMode.SUPERVISED
+
+        logger.info(
+            f"Maestro: ejecutando pipeline '{ctx.task_type}' "
+            f"en modo {exec_mode.value} | max_iterations={self.max_loop_iterations}"
+        )
+        ctx.log(
+            "maestro",
+            f"ExecutionMode={exec_mode.value} | LoopController activado "
+            f"(max {self.max_loop_iterations} iteraciones)",
+        )
+
+        # Ejecutar con LoopController
+        controller = LoopController(
+            mode=exec_mode,
+            max_iterations=self.max_loop_iterations,
+        )
+        return await controller.run(pipeline_fn, ctx)
 
     # ------------------------------------------------------------------
     # BUILDERS
