@@ -3,7 +3,7 @@
 > Mapa completo del sistema: 70 agentes del Agency Registry → 12 pipelines de CLAW.
 > Este documento es la fuente de verdad para el diseño de agentes, pipelines y skills.
 
-**Versión:** 2.3.0 · **Última actualización:** Abril 8, 2026
+**Versión:** 2.3.1 · **Última actualización:** Abril 8, 2026
 
 ---
 
@@ -102,9 +102,9 @@ junto con GitAgent real. `GitConfirmAgent` es lógica interna de `git_agent.py`.
 ### RESEARCH — Sub-agentes colaboradores propuestos
 
 ```
-WebScoutAgent ──┐
-                ├→ [SourceValidatorAgent*] → AnalystAgent → [BiasDetectorAgent*] → ThesisAgent
-DataAgent ──────┘
+WebScoutAgent ──┬
+              ├→ [SourceValidatorAgent*] → AnalystAgent → [BiasDetectorAgent*] → ThesisAgent
+DataAgent ───┘
 
 * = sub-agente colaborador propuesto
 ```
@@ -255,7 +255,7 @@ thinking¹        con ctx7²
 **Trigger keywords:** `tesis`, `análisis`, `inversión`, `investigación`, `mercado`, `precio`, `token`
 
 ```
-         ┌─ WebScoutAgent ──┐
+         ┌─ WebScoutAgent ──┬
          │  brave_search¹   │
          │                  ▼
          │           AgentContext
@@ -312,6 +312,11 @@ DataCollector → InsightGenerator → ReportDistributor
 
 **MCPs activos:**
 - `ReportDistributor` → `supabase_mcp` + `slack` ✅ v2.3.0
+
+**Contratos de datos (pendiente documentar — deuda técnica):**
+- `DataCollector` debe producir un DataFrame/JSON con esquema fijo (fuente, fecha, valor, tipo_metrica)
+- `InsightGenerator` consume ese esquema y produce insights tipados; el formato aún no está documentado
+- Riesgo: coupling implícito entre ambos agentes. Documentar en Fase 15 junto con el Dashboard.
 
 **Skills planificadas (Fase 17-A):**
 - `kpi_report` — reporte semanal/mensual de KPIs con tendencias
@@ -453,18 +458,18 @@ UIAgent → UXAgent → BrandAgent → A11yAgent → PromptEngineer
 
 ```
 MCP                  → Agentes que lo usan
-─────────────────────────────────────────────
+───────────────────────────────────────────
 mcp_memory           → TODOS (BaseAgent hooks _before_run/_after_run) ✅ v2.2.2
 sequential_thinking  → PlannerAgent, Maestro ✅ v2.2.2
-brave_search         → WebScoutAgent ✅ v2.2.2
-context7             → CoderAgent ✅ v2.3.0
+brave_search         → WebScoutAgent, DataEnricherAgent (propuesto) ✅ v2.2.2
+context7             → CoderAgent, RefactorAnalyzer (propuesto) ✅ v2.3.0
 deepwiki             → CoderAgent, SecurityReviewer
-supabase_mcp         → DataAgent, ReportDistributor, DataCollector ✅ v2.3.0
-coingecko            → DataAgent, BacktestReader ✅ v2.2.2
+supabase_mcp         → DataAgent, ReportDistributor, DataCollector, DataValidatorAgent (propuesto), RemediationAdvisorAgent (propuesto) ✅ v2.3.0
+coingecko            → DataAgent, BacktestReader, DataEnricherAgent (propuesto) ✅ v2.2.2
 okx                  → DataAgent, BacktestReader
-github_mcp           → CoderAgent ✅ v2.3.0, GitAgent
-semgrep              → SecurityAgent, ThreatModeler, CodeReviewer
-playwright           → TestGenerator
+github_mcp           → CoderAgent ✅ v2.3.0, GitAgent, RefactorAnalyzer (propuesto), AttackSurfaceMapperAgent (propuesto)
+semgrep              → SecurityAgent, ThreatModeler, CodeReviewer, AttackSurfaceMapperAgent (propuesto)
+playwright           → TestGenerator, RegressionAgent (propuesto), TestValidatorAgent (propuesto)
 slack                → ReportDistributor ✅ v2.3.0
 n8n                  → Cualquier agente de automatización
 ```
@@ -479,7 +484,7 @@ n8n                  → Cualquier agente de automatización
 ### Por qué existe este sistema
 
 Los agentes saben **cómo** ejecutar una tarea (Python, MCPs, prompts). Las skills definen
-**qué** flujo seguir para resolver tipos de tareas recurrentes. Son archivos `.md` legilbes
+**qué** flujo seguir para resolver tipos de tareas recurrentes. Son archivos `.md` legibles
 por humanos y por el orquestador, sin requerir cambios en el código Python existente.
 
 ### Estructura de `skills/`
@@ -521,7 +526,7 @@ Cada `skills/<pipeline>/claude.md` especifica:
 - **Skills autorizadas:** lista de skills disponibles para el pipeline.
 - **MCPs permitidos:** whitelist sobre los 13 MCPs disponibles.
 - **Restricciones de seguridad:** reglas específicas (ej. PM/Marketing no ejecutan código,
-  DEV no hace push a main sin confirmación explcita).
+  DEV no hace push a main sin confirmación explícita).
 - **Política de calidad:** criterios de "done" para el pipeline.
 
 ### Qué define cada skill `.md`
@@ -603,10 +608,10 @@ plan = await context.mcp_call(
 )
 ```
 
-### Registrar un pipeline nuevo
+### Registrar un pipeline nuevo o extendido con sub-agentes
 
 1. Crear agentes en `agents/<pipeline>/`
-2. Añadir entrada en `config.yaml` bajo `pipelines:`
+2. Añadir o actualizar entrada en `config.yaml` bajo `pipelines:` (lista de agentes extendida)
 3. Añadir builder en `core/maestro.py` → método `_build_<pipeline>_pipeline()`
 4. Añadir keywords en `core/maestro.py` → `_classify_task()`
 5. Crear ejemplo en `examples/<pipeline>_example.py`
