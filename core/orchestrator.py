@@ -1,10 +1,10 @@
 """
-orchestrator.py — Tombstone de compatibilidad (v2.2.2)
+orchestrator.py — Tombstone de compatibilidad (v2.2.2 → PR-2)
 
 REEMPLAZADO por: core.maestro.Maestro
 
-Este módulo existe solo para que imports legacy no rompan.
-NO usar en código nuevo.
+Este módulo emite DeprecationWarning en el momento del import y será
+eliminado en PR-3. NO usar en código nuevo.
 
 Migración:
     # Antes
@@ -16,6 +16,15 @@ Migración:
     maestro = Maestro()
     result = await maestro.run(user_input="...")
 """
+import warnings
+
+warnings.warn(
+    "core.orchestrator está deprecado y será eliminado en PR-3. "
+    "Usa: from core.maestro import Maestro",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from core.maestro import Maestro as Orchestrator  # alias de compatibilidad
 
 __all__ = ["Orchestrator"]
