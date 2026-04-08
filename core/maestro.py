@@ -10,6 +10,12 @@ Modos de ejecución (Fase 12):
   default        → SUPERVISED  (pide confirmación antes de reintentar)
   --auto         → AUTONOMOUS  (ejecuta sin interrupciones hasta terminar)
   --plan         → PLAN_ONLY   (genera plan, no modifica nada)
+
+Cambios v2.2.2 (PR-1 — MCPHub + memoria):
+  - self.mcp_hub: instancia del singleton MCPHub creado en __init__.
+  - run(): llama ctx.inject_mcp(self.mcp_hub) después de crear el contexto.
+    Con esto todos los agentes del pipeline tienen acceso a los 13 MCPs
+    via ctx.mcp_call() y ctx.is_mcp_available() sin imports adicionales.
 """
 from __future__ import annotations
 import os
@@ -110,9 +116,15 @@ class Maestro:
         self.memory = memory_manager
         # Número máximo de iteraciones del loop de corrección (env override)
         self.max_loop_iterations = int(os.getenv("MAX_LOOP_ITERATIONS", "5"))
+
+        # PR-1: instanciar MCPHub singleton — se inyecta en cada ctx en run()
+        from infrastructure.mcp_hub import get_mcp_hub
+        self.mcp_hub = get_mcp_hub()
+
         logger.info(
             f"Maestro iniciado | ambiente={self.environment} "
-            f"| max_loop_iterations={self.max_loop_iterations}"
+            f"| max_loop_iterations={self.max_loop_iterations} "
+            f"| mcps_listos={len(self.mcp_hub.available())}"
         )
 
     # ------------------------------------------------------------------
@@ -255,10 +267,11 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
 
         Flujo:
           1. Crear contexto de sesión
-          2. Clasificar tarea (keyword → CoT LLM si hay ambigüedad)
-          3. Consultar memoria episódica
-          4. Ejecutar pipeline con LoopController
-          5. Persistir sesión
+          2. Inyectar MCPHub en el contexto (PR-1)
+          3. Clasificar tarea (keyword → CoT LLM si hay ambigüedad)
+          4. Consultar memoria episódica
+          5. Ejecutar pipeline con LoopController
+          6. Persistir sesión
         """
         ctx = AgentContext(
             user_input=user_input,
@@ -267,6 +280,11 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
             input_repo=input_repo,
             output_path=output_path or os.getenv("OUTPUT_PATH", "./output"),
         )
+
+        # PR-1: inyectar MCPHub en el contexto para que todos los agentes
+        # del pipeline puedan usar MCPs via ctx.mcp_call() / ctx.is_mcp_available()
+        ctx.inject_mcp(self.mcp_hub)
+        ctx.log("maestro", f"MCPHub inyectado — {len(self.mcp_hub.available())} MCPs listos")
 
         # --- Clasificación inteligente ---
         if task_type:
