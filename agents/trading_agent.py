@@ -1,27 +1,17 @@
 """
-TradingAnalyticsAgent — DEPRECATED desde v2.0.0 (Fase 8).
+trading_agent.py — Redirector de compatibilidad (v2.2.2)
 
-Reemplazado por el pipeline TRADING con 4 sub-agentes en agents/trading/:
-  - backtest_reader.py
-  - metrics_calculator.py
-  - risk_analyzer.py
-  - strategy_advisor.py
-
-Este archivo se conserva para compatibilidad con tests legacy.
-Será eliminado en v3.0.0.
+Importa directamente desde el sub-pipeline agents/trading/.
+Este módulo NO debe usarse en código nuevo.
 """
-from __future__ import annotations
-from core.base_agent import BaseAgent
-from core.context import AgentContext
+from agents.trading.backtest_reader import BacktestReaderAgent      # noqa: F401
+from agents.trading.metrics_calculator import MetricsCalculatorAgent # noqa: F401
+from agents.trading.risk_analyzer import RiskAnalyzerAgent           # noqa: F401
+from agents.trading.strategy_advisor import StrategyAdvisorAgent     # noqa: F401
 
-
-class TradingAnalyticsAgent(BaseAgent):
-    """DEPRECATED — usar agents/trading/ sub-pipeline."""
-    name = "TradingAnalyticsAgent"
-    description = "[DEPRECATED] Agente monolítico de trading. Ver agents/trading/."
-
-    async def run(self, ctx: AgentContext) -> AgentContext:
-        raise NotImplementedError(
-            "TradingAnalyticsAgent está deprecated. "
-            "Usa el pipeline 'trading' con sub-agentes en agents/trading/"
-        )
+__all__ = [
+    "BacktestReaderAgent",
+    "MetricsCalculatorAgent",
+    "RiskAnalyzerAgent",
+    "StrategyAdvisorAgent",
+]

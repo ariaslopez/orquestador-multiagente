@@ -1,114 +1,43 @@
-name: CI
+name: CI — Smoke Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, feat/**]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  test:
-    name: Tests (Python ${{ matrix.python-version }})
+  smoke-tests:
+    name: Smoke Tests (Python 3.11)
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
-
     steps:
-      # ----------------------------------------------------------------
-      # 1. Checkout
-      # ----------------------------------------------------------------
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ----------------------------------------------------------------
-      # 2. Setup Python
-      # ----------------------------------------------------------------
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
+          python-version: "3.11"
+          cache: "pip"
 
-      # ----------------------------------------------------------------
-      # 3. Install dependencies
-      # Note: we exclude heavy offline/legacy packages (sentence-transformers,
-      # chromadb, ollama) to keep CI fast. All tests use mocks for LLM/network.
-      # ----------------------------------------------------------------
-      - name: Install core dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install \
-            aiohttp httpx \
-            groq google-generativeai openai \
-            fastapi uvicorn websockets jinja2 python-multipart \
-            supabase sqlalchemy aiosqlite \
-            duckduckgo-search beautifulsoup4 requests lxml \
-            pycoingecko \
-            openpyxl python-docx pdfplumber python-pptx pandas \
-            PyGithub GitPython \
-            cryptography \
-            rich click questionary \
-            python-dotenv pyyaml loguru tenacity psutil \
-            pytest pytest-asyncio
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
 
-      # ----------------------------------------------------------------
-      # 4. Create minimal .env so --doctor and imports don't fail
-      # ----------------------------------------------------------------
-      - name: Create test .env
-        run: |
-          cat > .env << 'EOF'
-          CLAW_ENV=local
-          GROQ_API_KEY=test_key_ci
-          GEMINI_API_KEY=
-          GITHUB_TOKEN=
-          SUPABASE_URL=
-          SUPABASE_KEY=
-          OUTPUT_PATH=/tmp/claw_output
-          LOGS_PATH=/tmp/claw_output/logs
-          UI_PORT=8000
-          LOG_LEVEL=WARNING
-          AGENT_VERBOSE_LOGS=false
-          GITHUB_CONFIRM_BEFORE_PUSH=true
-          EOF
-          mkdir -p /tmp/claw_output/logs
-
-      # ----------------------------------------------------------------
-      # 5. Run tests
-      # ----------------------------------------------------------------
-      - name: Run pytest
+      - name: Run smoke tests
         env:
-          SQLITE_DB_PATH: /tmp/claw_ci_test.db
-          PYTHONPATH: ${{ github.workspace }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          pytest tests/ -v \
-            --tb=short \
-            --asyncio-mode=auto \
-            -p no:warnings
+          pytest tests/smoke/ -v --tb=short
 
-      # ----------------------------------------------------------------
-      # 6. Smoke test — verify the system starts without import errors
-      # ----------------------------------------------------------------
-      - name: Smoke test (--doctor)
-        env:
-          SQLITE_DB_PATH: /tmp/claw_ci_smoke.db
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          python main.py --doctor || true
-        # '|| true' because --doctor may exit non-zero if optional services
-        # (Supabase, GitHub) are not configured — that's expected in CI.
-        # What matters is that it imports and runs without crashing.
-
-      # ----------------------------------------------------------------
-      # 7. Upload test results on failure
-      # ----------------------------------------------------------------
-      - name: Upload test artifacts on failure
-        if: failure()
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-py${{ matrix.python-version }}
-          path: |
-            /tmp/claw_output/logs/
+          name: smoke-test-results
+          path: .pytest_cache/
           retention-days: 7

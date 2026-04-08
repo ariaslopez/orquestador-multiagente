@@ -1,5 +1,12 @@
 """BaseAgent — Contrato base que todos los agentes deben implementar.
 
+Cambios v2.2.2 (PR-1 — MCPHub + memoria):
+  - _before_run(): recupera contexto de memoria episódica (mcp_memory)
+    antes de ejecutar run(). Inyecta `memory_context` en ctx.data.
+  - _after_run(): guarda el output relevante en mcp_memory después de run().
+  - mcp_call(): helper directo al ctx.mcp_call() — self.mcp_call(ctx, ...)
+  - Ambos hooks son NO-OP si ctx._mcp_hub no está inyectado (retrocompat).
+
 Cambios v2.2.1 (fix audit):
   - Bug A: eliminado double retry interno. execute() ya no tiene loop
     propio de reintentos — el PipelineRouter es el único responsable
@@ -15,7 +22,7 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from .context import AgentContext
 
 logger = logging.getLogger(__name__)
@@ -43,6 +50,11 @@ class BaseAgent(ABC):
       BaseAgent.execute() NO hace reintentos propios.
       El PipelineRouter.run_sequential() es el único responsable
       de reintentar agentes fallidos (evita double retry silencioso).
+
+    Hooks de memoria (v2.2.2):
+      _before_run(): recupera memoria episódica antes de run()
+      _after_run():  guarda resultado en memoria después de run()
+      Ambos son NO-OP si MCPHub no está inyectado en el contexto.
     """
 
     name: str        = "BaseAgent"
@@ -70,6 +82,82 @@ class BaseAgent(ABC):
                     from .api_router import APIRouter
                     cls._api_router = APIRouter()
         return cls._api_router
+
+    # ------------------------------------------------------------------
+    # Hooks de memoria episódica (v2.2.2)
+    # ------------------------------------------------------------------
+
+    async def _before_run(self, ctx: AgentContext) -> None:
+        """
+        Hook pre-ejecución: recupera contexto de memoria episódica.
+
+        Si mcp_memory está disponible, busca sesiones anteriores del mismo
+        task_type + nombre de agente y las inyecta en ctx.data['memory_context'].
+        Es NO-OP si MCPHub no está inyectado o mcp_memory no está configurado.
+        """
+        if not ctx.is_mcp_available("mcp_memory"):
+            return
+        try:
+            key = f"{ctx.task_type}:{self.name}:last"
+            memory = await ctx.mcp_call("mcp_memory", "retrieve", {"key": key})
+            if memory:
+                existing = ctx.get_data("memory_context") or []
+                if isinstance(existing, list):
+                    existing.append({"agent": self.name, "memory": memory})
+                    ctx.set_data("memory_context", existing)
+                ctx.log(self.name, f"Memoria episódica recuperada (key={key})")
+        except Exception as e:
+            logger.debug(f"[{self.name}] _before_run memoria: {e}")
+
+    async def _after_run(self, ctx: AgentContext) -> None:
+        """
+        Hook post-ejecución: guarda output relevante en memoria episódica.
+
+        Almacena un resumen del output del agente para que sesiones futuras
+        puedan beneficiarse del contexto acumulado.
+        Es NO-OP si MCPHub no está inyectado o mcp_memory no está configurado.
+        """
+        if not ctx.is_mcp_available("mcp_memory"):
+            return
+        try:
+            # Extraer el dato más relevante que este agente produjo
+            output_key = f"{self.name.lower()}_output"
+            agent_output = ctx.get_data(output_key) or ctx.final_output or ""
+            if not agent_output:
+                return
+            # Guardar con key normalizada por task_type + agente
+            key = f"{ctx.task_type}:{self.name}:last"
+            summary = str(agent_output)[:500]  # límite para evitar ruido
+            await ctx.mcp_call("mcp_memory", "store", {"key": key, "value": summary})
+            ctx.log(self.name, f"Resultado guardado en memoria (key={key})")
+        except Exception as e:
+            logger.debug(f"[{self.name}] _after_run memoria: {e}")
+
+    # ------------------------------------------------------------------
+    # Helper MCP directo
+    # ------------------------------------------------------------------
+
+    async def mcp_call(
+        self,
+        ctx: AgentContext,
+        server: str,
+        tool: str,
+        params: Dict[str, Any] = None,
+    ) -> Any:
+        """
+        Helper para llamar MCPs desde un agente de forma concisa.
+
+        Equivalente a ctx.mcp_call() pero con guard automático.
+
+        Uso en un agente:
+            results = await self.mcp_call(ctx, "brave_search", "search", {"query": q})
+            plan    = await self.mcp_call(ctx, "sequential_thinking", "think", {...})
+        """
+        return await ctx.mcp_call(server, tool, params or {})
+
+    # ------------------------------------------------------------------
+    # LLM helper
+    # ------------------------------------------------------------------
 
     async def llm(
         self,
@@ -167,18 +255,18 @@ class BaseAgent(ABC):
 
     async def execute(self, ctx: AgentContext) -> AgentContext:
         """
-        Wrapper con logging, tracing automático y manejo de errores.
+        Wrapper con logging, hooks de memoria, tracing automático y manejo de errores.
+
+        Flujo v2.2.2:
+          1. _before_run()  → recupera memoria episódica (NO-OP si sin MCPHub)
+          2. run()          → lógica del agente
+          3. _after_run()   → guarda resultado en memoria (NO-OP si sin MCPHub)
+          4. tracing        → audit_logger siempre
 
         DISEÑO DELIBERADO — sin reintentos propios:
           Este método ejecuta run() UNA sola vez y propaga la excepción
           si falla. El PipelineRouter.run_sequential() es quien decide
           si reintentar, cuántas veces, y con qué contexto de error.
-
-          Razones:
-            1. Evita double retry (antes: hasta 9 intentos silenciosos)
-            2. El PipelineRouter tiene visibilidad del estado global
-            3. El LoopController tiene visibilidad del pipeline completo
-            4. Los logs son precisos: 'intento 2/3' significa exactamente eso
         """
         ctx.current_agent = self.name
         ctx.log(self.name, f"Iniciando {self.name}")
@@ -190,10 +278,16 @@ class BaseAgent(ABC):
         trace_status  = "ok"
 
         try:
+            # Hook pre-ejecución: recuperar memoria episódica
+            await self._before_run(ctx)
+
             ctx = await self.run(ctx)
             ctx.mark_agent_done(self.name)
             ctx.log(self.name, "✅ Completado exitosamente")
             logger.info(f"[{self.name}] ✅ Completado")
+
+            # Hook post-ejecución: guardar resultado en memoria
+            await self._after_run(ctx)
 
         except Exception as e:
             trace_status = "error"
