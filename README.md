@@ -1,6 +1,6 @@
 # 🤖 CLAW Agent System — Orquestador Multi-Agente
 
-**Versión:** 2.2.2 · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
+**Versión:** 2.3.0 · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
 
 Sistema de inteligencia artificial multi-agente diseñado para automatizar trabajo de desarrollo, investigación, contenido, análisis, marketing, producto, diseño y seguridad. Un Maestro central clasifica cada tarea y la delega al pipeline correcto. Los agentes colaboran en secuencia o en paralelo, compartiendo un contexto tipado (`AgentContext`) y accediendo a 13 herramientas MCP externas.
 
@@ -45,20 +45,51 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 - `infrastructure/input_sanitizer.py` — Anti prompt-injection (13 patrones, 3 capas).
 - `infrastructure/security_sandbox.py` — Sandbox de filesystem y comandos.
 
-### Estado de integración (Fase 12 completada en v2.2.2)
+### Estado de integración — Fase 12 + 13 (v2.2.2 → v2.3.0)
 
-| Componente | Estado | Notas |
+| Componente | Estado | Versión |
 |---|---|---|
-| MCPHub → AgentContext (`ctx.mcp`) | ✅ Completado | `inject_mcp()` + helpers `is_mcp_available` / `mcp_call` |
-| mcp_memory → BaseAgent pre/post run | ✅ Completado | Hooks `_before_run` / `_after_run` en BaseAgent v2.2.2 |
-| Stubs duplicados en `agents/` raíz | ✅ Completado | Convertidos en tombstones/aliases (PR-2) |
-| `core/orchestrator.py` redundante | ✅ Resuelto | Tombstone hacia Maestro (compatibilidad) |
-| `sequential_thinking` en PlannerAgent | ✅ Completado | PlannerAgent v2 usa MCP como paso 1 |
-| WebScoutAgent real | ✅ Completado | brave_search + fallback DuckDuckGo |
-| DataAgent real | ✅ Completado | coingecko + supabase_mcp (trading) |
-| CoderAgent real (context7 + github_mcp) | 🔴 Pendiente | Fase 13 — esta semana |
-| ReportDistributorAgent real (slack) | 🔴 Pendiente | Fase 13 — esta semana |
-| Smoke tests completos | 🟠 En progreso | `test_mcp_context` + CI listo; 4 smoke tests pendientes |
+| MCPHub → AgentContext (`ctx.mcp`) | ✅ Completado | v2.2.2 |
+| mcp_memory → BaseAgent pre/post run | ✅ Completado | v2.2.2 |
+| Stubs duplicados en `agents/` raíz | ✅ Completado (tombstones) | v2.2.2 |
+| `core/orchestrator.py` redundante | ✅ Resuelto (tombstone → Maestro) | v2.2.2 |
+| `sequential_thinking` en PlannerAgent | ✅ Completado | v2.2.2 |
+| WebScoutAgent real (brave_search + DDG) | ✅ Completado | v2.2.2 |
+| DataAgent real (coingecko + supabase_mcp) | ✅ Completado | v2.2.2 |
+| CoderAgent real (context7 + github_mcp) | ✅ Completado | v2.3.0 |
+| ReportDistributorAgent real (supabase + slack) | ✅ Completado | v2.3.0 |
+| Smoke tests + CI básico | ⚠️ En progreso | 1/5 activo (Fase 14) |
+
+---
+
+## 🧩 Sistema de skills (Fase 17-A — en diseño)
+
+Además de los 12 pipelines y 70 agentes, el proyecto incorporará un sistema de
+skills declarativas que define **qué flujo seguir** para tareas recurrentes,
+sin modificar el código Python existente.
+
+```text
+skills/
+  shared/          # schema.md + safety_guards.md (reglas globales)
+  dev/             # claude.md + skills/ (implement_feature, code_review, write_tests, refactor_module)
+  research/        # claude.md + skills/ (web_research, competitor_analysis, summarize_sources)
+  content/         # claude.md + skills/ (longform_to_social, newsletter_issue, landing_copy)
+  office/          # claude.md + skills/ (meeting_notes, task_extraction, email_reply)
+  qa/              # claude.md + skills/ (static_audit, test_plan, regression_suite)
+  pm/              # claude.md + skills/ (roadmap_from_ideas, sprint_planning, backlog_grooming)
+  analytics/       # claude.md + skills/ (kpi_report, funnel_analysis, cohort_analysis)
+  marketing/       # claude.md + skills/ (campaign_brief, audience_persona, multi_channel_post, content_calendar)
+  product/         # claude.md + skills/ (problem_interview, feature_brief, prioritization_rice)
+  security_audit/  # claude.md + skills/ (threat_model, code_security_review, compliance_gap)
+  design/          # claude.md + skills/ (ui_review, ux_audit, brand_system)
+  # trading excluido del v1 de skills — se incorpora en v2 de Fase 17-A
+```
+
+- Cada `claude.md` define el rol del pipeline, agentes disponibles, MCPs permitidos y restricciones de seguridad.
+- Cada skill (`.md`) describe inputs requeridos, agentes involucrados, pasos y formato de salida.
+- Maestro leerá estas skills como guía de ejecución — los agentes Python no cambian.
+
+> Diseño completo en `ARCHITECTURE.md` · Cómo escribir skills en `MANUAL.md`.
 
 ---
 
@@ -83,7 +114,7 @@ Fallback 3        : Hyperspace legacy
 | `brave_search` | 🔍 Search | research | `BRAVE_API_KEY` |
 | `context7` | 🔍 Search | dev | `CONTEXT7_API_KEY` |
 | `deepwiki` | 🔍 Search | qa, dev | `DEEPWIKI_API_KEY` |
-| `supabase_mcp` | 🗄️ Data | analytics | `SUPABASE_URL` ✅ |
+| `supabase_mcp` | 🗄️ Data | analytics, trading | `SUPABASE_URL` ✅ |
 | `mcp_memory` | 🧠 Memory | todos | — ninguna |
 | `sequential_thinking` | 🤔 Reasoning | todos | — ninguna |
 | `coingecko` | 📈 Trading | trading, research | opcional |
@@ -133,7 +164,8 @@ orquestador-multiagente/
 │   ├── task_packet.py         # TaskPacket tipado
 │   └── groq_client.py         # Cliente Groq directo
 ├── agents/
-│   ├── dev/                   # planner (v2 + sequential_thinking), coder, reviewer, security, executor, git
+│   ├── dev/                   # planner (v2 + sequential_thinking), coder (v2 + context7/github_mcp),
+│   │                          #   reviewer, security, executor, git
 │   ├── research/              # web_scout (v2 + brave_search), data (v2 + coingecko), analyst (v2), thesis (v2)
 │   ├── content/               # topic, writer, editor, brand, scheduler
 │   ├── office/                # file_reader, data_analyzer, report_writer
@@ -144,12 +176,16 @@ orquestador-multiagente/
 │   ├── trading/               # backtest_reader, metrics_calculator,
 │   │                          #   risk_analyzer, strategy_advisor,
 │   │                          #   data_agent (v2 + coingecko + supabase_mcp)
-│   ├── analytics/             # data_collector, insight_generator, report_distributor
+│   ├── analytics/             # data_collector, insight_generator,
+│   │                          #   report_distributor (v2 + supabase_mcp + slack)
 │   ├── marketing/             # strategy_agent, copy_agent, growth_agent, analytics_agent
 │   ├── product/               # market_researcher, feedback_synthesizer,
 │   │                          #   feature_prioritizer, nudge_designer
 │   ├── security/              # threat_modeler, code_reviewer, compliance_checker
 │   └── design/                # ui_agent, ux_agent, brand_agent, a11y_agent, prompt_engineer
+├── skills/                    # Sistema de skills declarativas (Fase 17-A — pendiente)
+│   ├── shared/                #   schema.md + safety_guards.md
+│   └── <pipeline>/            #   claude.md + skills/*.md por pipeline
 ├── infrastructure/
 │   ├── memory_manager.py      # SQLite + Supabase
 │   ├── mcp_hub.py             # Proxy universal 13 MCPs — conectado a AgentContext
@@ -183,32 +219,33 @@ orquestador-multiagente/
 │       └── ci.yml                 # Smoke tests en cada push/PR
 ├── examples/                  # Scripts listos por pipeline
 ├── config.yaml                # Configuración global y 12 pipelines
-├── main.py                    # Entrada CLI (VERSION=2.2.2)
+├── main.py                    # Entrada CLI (VERSION=2.3.0)
 ├── setup.py                   # Setup inicial + verificación
 ├── requirements.txt
 ├── .env.example
 ├── README.md                  # Este archivo
 ├── ROADMAP.md                 # Fases completadas y próximas
-├── ARCHITECTURE.md            # Mapa 70 agentes → 12 pipelines
+├── ARCHITECTURE.md            # Mapa 70 agentes → 12 pipelines + sistema de skills
 └── MANUAL.md                  # Manual técnico de desarrollo
 ```
 
 ---
 
-## ✅ PRs Fase 12–13 completados (v2.2.2)
-
-Todos los PRs de la Fase 12 fueron fusionados en el commit `aa8a4a7` (squash `#1`).
+## ✅ PRs Fase 12–13 completados (v2.2.2 → v2.3.0)
 
 | PR | Título | Estado |
 |---|---|---|
-| **PR-1** | `feat: conectar MCPHub + mcp_memory a AgentContext y BaseAgent` | ✅ Fusionado |
-| **PR-2** | `chore: eliminar stubs duplicados y archivos redundantes` | ✅ Fusionado |
-| **PR-3** | `feat: WebScoutAgent + PlannerAgent + DataAgent v2 con MCPs` | ✅ Fusionado |
-| **PR-4** | `test: smoke test MCPHub + workflow CI básico` | ✅ Fusionado |
+| **PR-1** | `feat: conectar MCPHub + mcp_memory a AgentContext y BaseAgent` | ✅ Fusionado (v2.2.2) |
+| **PR-2** | `chore: eliminar stubs duplicados y archivos redundantes` | ✅ Fusionado (v2.2.2) |
+| **PR-3** | `feat: WebScoutAgent + PlannerAgent + DataAgent v2 con MCPs` | ✅ Fusionado (v2.2.2) |
+| **PR-4** | `test: smoke test MCPHub + workflow CI básico` | ✅ Fusionado (v2.2.2) |
+| **PR-5** | `feat: CoderAgent real con context7 + github_mcp` | ✅ Fusionado (v2.3.0) |
+| **PR-6** | `feat: ReportDistributorAgent real con supabase_mcp + slack` | ✅ Fusionado (v2.3.0) |
 
-**PR pendientes (Fase 13 restante):**
-- `feat: CoderAgent real con context7 + github_mcp`
-- `feat: ReportDistributorAgent real con supabase_mcp + slack`
+**Próximos (Fase 14):**
+- `test: smoke tests completos (4 tests pendientes)`
+- `feat: rate limiting en MCPHub (Brave + CoinGecko)`
+- `ci: lint workflow con ruff`
 
 ---
 
@@ -271,4 +308,4 @@ LOCAL_CONTEXT_SIZE=65536
 
 ## 🤝 Contribución
 
-Ver `MANUAL.md` para la guía completa: convenciones de código, cómo agregar un nuevo pipeline, cómo agregar un nuevo MCP, estructura de tests.
+Ver `MANUAL.md` para la guía completa: convenciones de código, cómo agregar un nuevo pipeline, cómo agregar un nuevo MCP, cómo escribir skills, estructura de tests.
