@@ -1,0 +1,112 @@
+{
+  "_comment": "CLAW MCP Configuration — 13 servidores registrados",
+  "version": "2.2.2",
+  "timeout_default_seconds": 30,
+  "mcps": {
+    "brave_search": {
+      "category": "search",
+      "description": "Busqueda web en tiempo real via Brave Search API",
+      "required_env": "BRAVE_API_KEY",
+      "used_by": ["WebScoutAgent", "AnalystAgent"],
+      "tools": ["search"],
+      "docs": "https://api.search.brave.com/app/documentation"
+    },
+    "context7": {
+      "category": "search",
+      "description": "Documentacion tecnica actualizada de librerias y frameworks",
+      "required_env": "CONTEXT7_API_KEY",
+      "used_by": ["CoderAgent", "PlannerAgent", "AnalystAgent"],
+      "tools": ["get_docs", "resolve_library"],
+      "docs": "https://context7.com/docs"
+    },
+    "deepwiki": {
+      "category": "search",
+      "description": "Analisis profundo de repositorios GitHub: arquitectura, patrones, dependencias",
+      "required_env": "DEEPWIKI_API_KEY",
+      "used_by": ["QAAgent", "SecurityAgent", "CoderAgent"],
+      "tools": ["analyze_repo", "get_file_summary"],
+      "docs": "https://deepwiki.com/api"
+    },
+    "supabase_mcp": {
+      "category": "data",
+      "description": "Queries SQL sobre tablas CLAW (sessions, agent_traces, audit_events)",
+      "required_env": "SUPABASE_URL",
+      "used_by": ["DataCollectorAgent", "InsightGeneratorAgent", "ReportDistributorAgent"],
+      "tools": ["query", "natural_query", "get_session_stats", "get_agent_performance"],
+      "docs": "https://supabase.com/docs"
+    },
+    "mcp_memory": {
+      "category": "memory",
+      "description": "Memoria KV persistente entre sesiones para insights y patrones descubiertos",
+      "required_env": null,
+      "used_by": ["all_agents"],
+      "tools": ["store", "retrieve", "search", "list_all", "delete"],
+      "storage": "data/mcp_memory.db"
+    },
+    "sequential_thinking": {
+      "category": "reasoning",
+      "description": "Razonamiento encadenado paso a paso antes de responder tareas complejas",
+      "required_env": null,
+      "used_by": ["PlannerAgent", "AnalystAgent", "StrategyAdvisorAgent", "ThesisAgent"],
+      "tools": ["think", "decompose", "validate_plan"]
+    },
+    "coingecko": {
+      "category": "trading",
+      "description": "Precios y datos de mercado crypto en tiempo real",
+      "required_env": null,
+      "required_env_optional": "COINGECKO_API_KEY",
+      "used_by": ["DataAgent", "AnalystAgent", "MetricsCalculatorAgent"],
+      "tools": ["get_price", "get_market_data", "get_trending", "get_coin_info", "search"],
+      "docs": "https://www.coingecko.com/en/api/documentation"
+    },
+    "okx": {
+      "category": "trading",
+      "description": "Datos de mercado OKX: spot, futures, funding rates, orderbook",
+      "required_env": "OKX_API_KEY",
+      "used_by": ["DataAgent", "MetricsCalculatorAgent", "RiskAnalyzerAgent"],
+      "tools": ["get_ticker", "get_orderbook", "get_candlesticks", "get_funding_rate", "get_instruments"],
+      "docs": "https://www.okx.com/docs-v5"
+    },
+    "github_mcp": {
+      "category": "dev",
+      "description": "Acceso unificado a repos GitHub: archivos, issues, PRs, commits",
+      "required_env": "GITHUB_TOKEN",
+      "used_by": ["CoderAgent", "GitAgent", "SecurityAgent", "ReviewerAgent"],
+      "tools": ["get_file", "search_code", "list_issues", "create_issue", "get_pull_requests", "get_commits"],
+      "docs": "https://docs.github.com/en/rest"
+    },
+    "semgrep": {
+      "category": "security",
+      "description": "Analisis estatico SAST: OWASP Top 10, inyecciones, secrets hardcoded",
+      "required_env": null,
+      "required_env_optional": "SEMGREP_APP_TOKEN",
+      "used_by": ["SecurityAgent", "SecurityReviewerAgent", "BugHunterAgent"],
+      "tools": ["scan_code", "scan_repo", "get_rules"],
+      "install": "pip install semgrep"
+    },
+    "playwright": {
+      "category": "qa",
+      "description": "Testing de UI con browser headless: screenshots, link check, performance",
+      "required_env": null,
+      "used_by": ["TestGeneratorAgent", "PerformanceProfilerAgent"],
+      "tools": ["screenshot", "check_links", "run_test", "get_page_content", "measure_performance"],
+      "install": "pip install playwright && playwright install chromium"
+    },
+    "slack": {
+      "category": "notify",
+      "description": "Envio de reportes y alertas del sistema a canales Slack",
+      "required_env": "SLACK_BOT_TOKEN",
+      "used_by": ["ReportDistributorAgent", "AuditLogger"],
+      "tools": ["send_message", "send_report", "send_alert", "list_channels"],
+      "docs": "https://api.slack.com/messaging/sending"
+    },
+    "n8n": {
+      "category": "automation",
+      "description": "Disparo de workflows de automatizacion via n8n webhooks",
+      "required_env": "N8N_WEBHOOK_URL",
+      "used_by": ["ReportDistributorAgent", "SchedulerAgent"],
+      "tools": ["trigger_workflow", "trigger_webhook", "list_workflows"],
+      "docs": "https://docs.n8n.io/api"
+    }
+  }
+}

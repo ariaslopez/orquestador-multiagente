@@ -1,5 +1,5 @@
 # ============================================
-# CLAW Agent System — Dependencies
+# CLAW Agent System — Dependencies v2.2.2
 # ============================================
 
 # Core async
@@ -66,3 +66,26 @@ pytest-asyncio>=0.23.0
 sentence-transformers>=2.2.0
 chromadb>=0.4.0
 ollama>=0.1.7
+
+# ============================================
+# MCP Integrations (v2.2.2)
+# ============================================
+
+# Playwright (QA / UI Testing)
+# pip install playwright && playwright install chromium
+playwright>=1.44.0
+
+# Semgrep (SAST Security Analysis)
+semgrep>=1.75.0
+
+# MCP Memory (incluido — usa SQLite local, sin dep extra)
+# Sequential Thinking (incluido — usa APIRouter interno, sin dep extra)
+# CoinGecko MCP (incluido — usa aiohttp, ya instalado)
+# OKX MCP (incluido — usa aiohttp, ya instalado)
+# GitHub MCP (incluido — usa aiohttp, ya instalado)
+# Brave Search MCP (incluido — usa aiohttp, ya instalado)
+# Context7 MCP (incluido — usa aiohttp, ya instalado)
+# DeepWiki MCP (incluido — usa aiohttp, ya instalado)
+# Supabase MCP (incluido — usa supabase, ya instalado)
+# Slack MCP (incluido — usa aiohttp, ya instalado)
+# n8n MCP (incluido — usa aiohttp, ya instalado)
