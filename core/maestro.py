@@ -16,6 +16,11 @@ Cambios v2.2.2 (PR-1 — MCPHub + memoria):
   - run(): llama ctx.inject_mcp(self.mcp_hub) después de crear el contexto.
     Con esto todos los agentes del pipeline tienen acceso a los 13 MCPs
     via ctx.mcp_call() y ctx.is_mcp_available() sin imports adicionales.
+
+Cambios v2.2.3 (PR-5 — TRADING pipeline + DataAgent):
+  - _build_trading_pipeline: DataAgent agregado como primera etapa.
+    Flujo: DataAgent → BacktestReader → MetricsCalc → RiskAnalyzer → StrategyAdvisor
+  - TASK_KEYWORDS['trading'] ampliados con términos de mercado y crypto.
 """
 from __future__ import annotations
 import os
@@ -51,8 +56,8 @@ class Maestro:
         ],
         "research": [
             "investiga", "analiza", "tesis", "research", "analisis",
-            "comparativa", "estudio", "evalua", "tendencia", "mercado",
-            "bitcoin", "ethereum", "crypto", "token", "defi", "nft",
+            "comparativa", "estudio", "evalua", "tendencia",
+            "token", "defi", "nft",
         ],
         "content": [
             "tweet", "hilo", "post", "contenido", "redacta", "escribe",
@@ -70,10 +75,16 @@ class Maestro:
             "planifica", "backlog", "sprint", "tareas", "roadmap",
             "epicas", "estimacion", "plan", "project",
         ],
+        # PR-5: keywords ampliados con términos de mercado y crypto
         "trading": [
-            "bot de trading", "log", "backtest", "estrategia",
+            "bot de trading", "backtest", "estrategia", "log de trading",
             "performance", "win rate", "drawdown", "sharpe",
             "senal", "trading",
+            # Mercado y crypto (PR-5)
+            "precio", "bitcoin", "btc", "eth", "ethereum", "sol", "solana",
+            "crypto", "criptomoneda", "mercado", "coingecko", "okx",
+            "posicion", "long", "short", "stop loss", "take profit",
+            "vela", "ohlcv", "volumen de mercado",
         ],
         "analytics": [
             "dashboard", "kpi", "metricas de negocio", "insights",
@@ -205,7 +216,8 @@ Pipelines disponibles:
 - office: analizar archivos Excel, Word, PDF, PowerPoint
 - qa: auditar, revisar, validar código existente, buscar bugs
 - pm: planificar proyectos, crear backlog, sprints, roadmaps de gestión
-- trading: analizar bots de trading, logs, backtests, métricas de performance
+- trading: analizar bots de trading, logs, backtests, métricas de performance,
+           precios de crypto, señales de mercado, posiciones, OHLCV
 - analytics: KPIs, dashboards, insights de negocio, reportes de datos
 - marketing: campañas, copy, growth, CAC/LTV, posicionamiento de marca
 - product: features, roadmap de producto, feedback de usuarios, priorización
@@ -475,13 +487,30 @@ Responde SOLO con la categoría, sin explicación ni puntuación."""
         ], [], "sequential"
 
     def _build_trading_pipeline(self):
+        """
+        Pipeline TRADING (v2.2.3) — flujo de datos:
+
+          DataAgent           → ctx.data['market_data', 'market_symbol', 'market_provider']
+              ↓
+          BacktestReaderAgent → ctx.data['backtest_raw', 'backtest_summary']
+              ↓
+          MetricsCalculator   → ctx.data['metrics'] (win_rate, sharpe, max_drawdown...)
+              ↓
+          RiskAnalyzer        → ctx.data['risk_report'] (risk_score, alerts[], recs[])
+              ↓
+          StrategyAdvisor     → ctx.data['strategy_advice'] (summary, actions[], confidence)
+        """
+        from agents.trading.data_agent import DataAgent
         from agents.trading.backtest_reader import BacktestReaderAgent
         from agents.trading.metrics_calculator import MetricsCalculatorAgent
         from agents.trading.risk_analyzer import RiskAnalyzerAgent
         from agents.trading.strategy_advisor import StrategyAdvisorAgent
         return [
-            BacktestReaderAgent(), MetricsCalculatorAgent(),
-            RiskAnalyzerAgent(), StrategyAdvisorAgent(),
+            DataAgent(),
+            BacktestReaderAgent(),
+            MetricsCalculatorAgent(),
+            RiskAnalyzerAgent(),
+            StrategyAdvisorAgent(),
         ], [], "sequential"
 
     def _build_analytics_pipeline(self):
