@@ -11,7 +11,11 @@ from dotenv import load_dotenv
 # Cargar .env antes que todo
 load_dotenv()
 
-VERSION = "2.2.0"
+# Configurar logging centralizado antes que cualquier otro import del sistema
+from infrastructure.log_config import setup_logging
+setup_logging()
+
+VERSION = "2.2.2"
 
 ALL_PIPELINES = [
     "dev", "research", "content", "office", "qa", "pm", "trading",
@@ -30,12 +34,12 @@ def check_setup() -> bool:
         print("   Ejecuta primero: python setup.py\n")
         return False
 
-    groq_key     = os.getenv("GROQ_API_KEY", "")
-    gemini_key   = os.getenv("GEMINI_API_KEY", "")
-    ollama_on    = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
+    groq_key   = os.getenv("GROQ_API_KEY", "")
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    ollama_on  = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
 
-    has_cloud    = bool(groq_key) and "your_" not in groq_key
-    has_cloud   |= bool(gemini_key) and "your_" not in gemini_key
+    has_cloud  = bool(groq_key)   and "your_" not in groq_key
+    has_cloud |= bool(gemini_key) and "your_" not in gemini_key
 
     if not has_cloud and not ollama_on:
         print("\n⚠️  Ningún provider LLM configurado.")
@@ -49,8 +53,10 @@ def check_setup() -> bool:
 
 def run_doctor() -> None:
     """Verifica el estado de todas las dependencias y APIs."""
+    import logging
     from rich.console import Console
     from rich.table import Table
+    from infrastructure.log_config import get_log_path
     console = Console()
     console.print(f"\n[bold cyan]👨‍⚕️  CLAW Doctor v{VERSION} — Verificando sistema...[/bold cyan]\n")
 
@@ -63,6 +69,10 @@ def run_doctor() -> None:
     # .env
     checks.append((".env existe", Path(".env").exists(), ""))
 
+    # Log consolidado
+    log_path = get_log_path()
+    checks.append(("Log consolidado", True, f"✅ {log_path}"))
+
     # APIs cloud
     for api, key_env in [
         ("Groq", "GROQ_API_KEY"),
@@ -74,11 +84,11 @@ def run_doctor() -> None:
         ok = bool(val) and "your_" not in val
         checks.append((f"{api} API Key", ok, "✅" if ok else "❌ no configurada"))
 
-    # Ollama — ping servidor local
+    # Ollama
     import urllib.request
     ollama_enabled = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace("/v1", "")
-    ollama_model = os.getenv("OLLAMA_MODEL", "") or os.getenv("OLLAMA_HW_PROFILE", "auto")
+    ollama_url     = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace("/v1", "")
+    ollama_model   = os.getenv("OLLAMA_MODEL", "") or os.getenv("OLLAMA_HW_PROFILE", "auto")
     if ollama_enabled:
         try:
             urllib.request.urlopen(ollama_url, timeout=2)
@@ -89,7 +99,7 @@ def run_doctor() -> None:
         checks.append(("Ollama (local LLM)", False, "⚠️  deshabilitado (OLLAMA_ENABLED=false)"))
 
     # LoopController
-    max_iter = int(os.getenv("MAX_LOOP_ITERATIONS", "5"))
+    max_iter     = int(os.getenv("MAX_LOOP_ITERATIONS", "5"))
     api_strategy = os.getenv("API_STRATEGY", "local_first")
     checks.append(("LoopController", True, f"✅ max_iterations={max_iter} | strategy={api_strategy}"))
 
@@ -138,16 +148,18 @@ async def run_task(
     effort: str = "normal",
 ) -> None:
     """Ejecuta una tarea a través del Maestro con LoopController."""
+    import logging
     from rich.console import Console
     from rich.panel import Panel
     from infrastructure.memory_manager import MemoryManager
+    from infrastructure.log_config import get_log_path
     from core.maestro import Maestro
 
     console = Console()
-    memory = MemoryManager()
+    memory  = MemoryManager()
     maestro = Maestro(memory_manager=memory)
+    logger  = logging.getLogger("claw.main")
 
-    # Determinar modo para display
     if plan:
         mode_label = "[yellow]PLAN_ONLY[/yellow]"
     elif auto:
@@ -160,7 +172,12 @@ async def run_task(
     console.print(f"   Modo:   {mode_label}  |  Effort: [white]{effort}[/white]")
     if task_type:
         console.print(f"   Pipeline forzado: [yellow]{task_type}[/yellow]")
+    console.print(f"   Log:    [dim]{get_log_path()}[/dim]")
     console.print()
+
+    logger.info(
+        f"Tarea iniciada | task='{task[:60]}' | mode={'plan' if plan else 'auto' if auto else 'supervised'} | effort={effort}"
+    )
 
     with console.status("[cyan]Clasificando tarea y preparando pipeline...[/cyan]"):
         ctx = await maestro.run(
@@ -173,15 +190,21 @@ async def run_task(
             plan_mode=plan,
         )
 
-    # Registrar effort en ctx para que los agentes lo puedan leer
-    # (se envía como contexto en la próxima llamada si se retoma la sesión)
     ctx.set_data("effort", effort)
 
-    # Estado final
-    exec_mode = ctx.get_data("execution_mode", "supervised")
-    loop_iter = ctx.get_data("loop_iteration", 1)
+    exec_mode  = ctx.get_data("execution_mode", "supervised")
+    loop_iter  = ctx.get_data("loop_iteration", 1)
     status_color = "green" if ctx.status == "completed" else "red"
     status_icon  = "✅" if ctx.status == "completed" else "❌"
+
+    logger.info(
+        f"Tarea finalizada | status={ctx.status} | pipeline={ctx.pipeline_name} "
+        f"| tokens={ctx.total_tokens} | cost=${ctx.estimated_cost_usd:.4f} "
+        f"| duration={ctx.duration_seconds:.1f}s | session={ctx.session_id[:8]}"
+    )
+
+    if ctx.error:
+        logger.error(f"Pipeline error: {ctx.error}")
 
     console.print(Panel(
         ctx.final_output or "(Sin output generado)",
@@ -200,9 +223,10 @@ async def run_task(
         f"💰 ${ctx.estimated_cost_usd:.4f} USD  |  "
         f"💾 Sesión: {ctx.session_id[:8]}[/dim]"
     )
+    console.print(f"[dim]📝 Log: {get_log_path()}[/dim]")
 
     if ctx.output_path:
-        console.print(f"[dim]📁 Output guardado en: {ctx.output_path}[/dim]\n")
+        console.print(f"[dim]📁 Output: {ctx.output_path}[/dim]\n")
 
     if ctx.failed_agents:
         console.print(
@@ -240,12 +264,11 @@ def run_interactive() -> None:
         if not raw:
             continue
 
-        # Parsear flags inline: !auto !plan !effort:max
         auto   = "!auto"   in raw
         plan   = "!plan"   in raw
         effort = "normal"
-        if "!effort:min"  in raw: effort = "min"
-        if "!effort:max"  in raw: effort = "max"
+        if "!effort:min" in raw: effort = "min"
+        if "!effort:max" in raw: effort = "max"
         task   = raw.replace("!auto", "").replace("!plan", "")
         task   = task.replace("!effort:min", "").replace("!effort:max", "").replace("!effort:normal", "").strip()
 
@@ -256,12 +279,10 @@ def run_ui() -> None:
     """Inicia el dashboard web."""
     from ui.server import start_server
     auto_open = os.getenv("UI_AUTO_OPEN", "true").lower() == "true"
-    host = os.getenv("UI_HOST", "127.0.0.1")
-    port = int(os.getenv("UI_PORT", "8000"))
-
+    host      = os.getenv("UI_HOST", "127.0.0.1")
+    port      = int(os.getenv("UI_PORT", "8000"))
     if auto_open:
         webbrowser.open(f"http://{host}:{port}")
-
     start_server(host=host, port=port)
 
 
@@ -274,63 +295,57 @@ def main():
 Pipelines disponibles: {', '.join(ALL_PIPELINES)}
 
 Ejemplos:
-  python main.py --task "Crea un bot de trading para BTC/USDT"
-  python main.py --task "Crea un bot de trading para BTC/USDT" --auto
-  python main.py --task "Audita seguridad de esta API" --type security_audit --plan
+  python main.py --task "Crea un bot RSI para XAUUSD"
+  python main.py --task "Crea un bot RSI para XAUUSD" --auto
+  python main.py --task "Audita seguridad de la API" --type security_audit --plan
   python main.py --task "Tesis de inversion para SOL" --type research --effort max
   python main.py --task "Analiza este Excel" --file data.xlsx --type office
-  python main.py --task "refactoriza @src/api.py" --type qa
   cat archivo.py | python main.py --type review --stdin
   git diff HEAD~1 | python main.py --type security_audit --stdin
   python main.py --interactive
   python main.py --ui
   python main.py --doctor
+  tail -f data/claw.log          # monitorear logs en tiempo real
         """,
     )
 
-    # Acciones principales
-    parser.add_argument("--task",        "-t", type=str, help="Tarea a ejecutar en lenguaje natural")
-    parser.add_argument("--interactive", "-i", action="store_true", help="Modo interactivo (loop de tareas)")
+    parser.add_argument("--task",        "-t", type=str,            help="Tarea a ejecutar")
+    parser.add_argument("--interactive", "-i", action="store_true", help="Modo interactivo")
     parser.add_argument("--ui",                action="store_true", help="Iniciar dashboard web")
     parser.add_argument("--doctor",            action="store_true", help="Verificar estado del sistema")
-    parser.add_argument("--setup",             action="store_true", help="Ejecutar configuración inicial")
-    parser.add_argument("--stdin",             action="store_true",
-                        help="Leer tarea desde stdin (pipe). Ej: cat archivo.py | python main.py --stdin")
-
-    # Opciones de tarea
+    parser.add_argument("--setup",             action="store_true", help="Configuración inicial")
+    parser.add_argument("--stdin",             action="store_true", help="Leer tarea desde stdin")
     parser.add_argument(
-        "--type",
-        choices=ALL_PIPELINES,
-        metavar="PIPELINE",
-        help=f"Forzar tipo de pipeline. Opciones: {', '.join(ALL_PIPELINES)}",
+        "--type", choices=ALL_PIPELINES, metavar="PIPELINE",
+        help=f"Forzar pipeline: {', '.join(ALL_PIPELINES)}",
     )
-    parser.add_argument("--file",   "-f", type=str, help="Archivo de entrada (.xlsx, .pdf, .docx, etc.)")
-    parser.add_argument("--repo",   "-r", type=str, help="Repositorio GitHub (owner/repo)")
-    parser.add_argument("--output", "-o", type=str, help="Carpeta de output")
-
-    # Modificadores de ejecución (Fase 12)
-    parser.add_argument("--auto",   "-a", action="store_true",
-                        help="Modo AUTONOMOUS: ejecuta sin confirmaciones hasta terminar")
-    parser.add_argument("--plan",   "-p", action="store_true",
-                        help="Modo PLAN_ONLY: genera el plan de acción sin ejecutar nada")
-    parser.add_argument("--effort", choices=["min", "normal", "max"], default="normal",
-                        help="Nivel de esfuerzo: min=rápido, normal=balanceado, max=análisis profundo")
-    parser.add_argument("--verbose", "-v", action="store_true",
-                        help="Mostrar logs detallados de cada agente")
-    parser.add_argument("--env", choices=["local", "server"],
-                        help="Forzar ambiente (sobreescribe .env)")
-
-    # Info y utilidades
-    parser.add_argument("--history", action="store_true", help="Ver historial de sesiones")
-    parser.add_argument("--usage",   action="store_true", help="Ver estadísticas de uso y costos")
-    parser.add_argument("--version", action="store_true", help="Ver versión del sistema")
+    parser.add_argument("--file",    "-f", type=str,            help="Archivo de entrada")
+    parser.add_argument("--repo",    "-r", type=str,            help="Repositorio GitHub (owner/repo)")
+    parser.add_argument("--output",  "-o", type=str,            help="Carpeta de output")
+    parser.add_argument("--auto",    "-a", action="store_true", help="Modo AUTONOMOUS")
+    parser.add_argument("--plan",    "-p", action="store_true", help="Modo PLAN_ONLY")
+    parser.add_argument("--effort",  choices=["min", "normal", "max"], default="normal", help="Nivel de esfuerzo")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Logs detallados")
+    parser.add_argument("--env",     choices=["local", "server"], help="Forzar ambiente")
+    parser.add_argument("--history",           action="store_true", help="Ver historial de sesiones")
+    parser.add_argument("--usage",             action="store_true", help="Estadísticas de uso")
+    parser.add_argument("--version",           action="store_true", help="Ver versión")
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Nivel de log para esta ejecución (sobreescribe LOG_LEVEL del .env)",
+    )
 
     args = parser.parse_args()
+
+    # Aplicar log-level de CLI si se especificó
+    if args.log_level:
+        import logging
+        logging.getLogger().setLevel(args.log_level)
 
     if args.env:
         os.environ["CLAW_ENV"] = args.env
 
-    # Acciones que no requieren setup
     if args.version:
         print(f"CLAW Agent System v{VERSION}")
         return
@@ -341,7 +356,6 @@ Ejemplos:
         subprocess.run([sys.executable, "setup.py"], check=False)
         return
 
-    # Verificar setup para el resto de acciones
     if not check_setup():
         sys.exit(1)
 
@@ -349,12 +363,12 @@ Ejemplos:
         from infrastructure.memory_manager import MemoryManager
         from rich.console import Console
         from rich.table import Table
-        memory = MemoryManager()
+        memory   = MemoryManager()
         sessions = memory.get_all_sessions(limit=20)
-        console = Console()
-        table = Table(title="Historial de Sesiones (20 últimas)")
-        table.add_column("ID",    style="dim", width=10)
-        table.add_column("Tarea", max_width=40)
+        console  = Console()
+        table    = Table(title="Historial de Sesiones (20 últimas)")
+        table.add_column("ID",     style="dim", width=10)
+        table.add_column("Tarea",  max_width=40)
         table.add_column("Tipo")
         table.add_column("Modo")
         table.add_column("Estado")
@@ -377,7 +391,7 @@ Ejemplos:
         from infrastructure.memory_manager import MemoryManager
         from rich.console import Console
         memory = MemoryManager()
-        stats = memory.get_usage_stats()
+        stats  = memory.get_usage_stats()
         console = Console()
         console.print("\n[bold cyan]📊 Estadísticas de Uso[/bold cyan]")
         console.print(f"  Total sesiones:  [white]{stats.get('total_sessions', 0)}[/white]")
@@ -394,38 +408,23 @@ Ejemplos:
         run_interactive()
         return
 
-    # --stdin: leer tarea desde pipe
     if args.stdin or (not args.task and not sys.stdin.isatty()):
         piped = sys.stdin.read().strip()
         if not piped:
-            print("❌ stdin vacío. Envía contenido por pipe. Ej: cat archivo.py | python main.py --stdin")
+            print("❌ stdin vacío.")
             sys.exit(1)
-        # El contenido del pipe se convierte en la tarea
-        task = piped
         asyncio.run(run_task(
-            task=task,
-            task_type=args.type,
-            input_file=args.file,
-            input_repo=args.repo,
-            output_path=args.output,
-            verbose=args.verbose,
-            auto=args.auto,
-            plan=args.plan,
-            effort=args.effort,
+            task=piped, task_type=args.type, input_file=args.file,
+            input_repo=args.repo, output_path=args.output,
+            verbose=args.verbose, auto=args.auto, plan=args.plan, effort=args.effort,
         ))
         return
 
     if args.task:
         asyncio.run(run_task(
-            task=args.task,
-            task_type=args.type,
-            input_file=args.file,
-            input_repo=args.repo,
-            output_path=args.output,
-            verbose=args.verbose,
-            auto=args.auto,
-            plan=args.plan,
-            effort=args.effort,
+            task=args.task, task_type=args.type, input_file=args.file,
+            input_repo=args.repo, output_path=args.output,
+            verbose=args.verbose, auto=args.auto, plan=args.plan, effort=args.effort,
         ))
         return
 
