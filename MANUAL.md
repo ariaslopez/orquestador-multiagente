@@ -1,7 +1,7 @@
 # MANUAL TÉCNICO — CLAW Agent System
 
 > Guía completa para desarrollar, depurar y extender el sistema.
-> Versión: 2.1.0 · Última actualización: Abril 7, 2026
+> Versión: 2.2.2 · Última actualización: Abril 8, 2026
 
 ---
 
@@ -15,24 +15,25 @@
 | Router de pipelines | `core/pipeline_router.py` | ✅ Sequential + parallel_then_sequential |
 | Control de reintentos | `core/loop_controller.py` | ✅ Retry + recovery con límites |
 | Router de LLMs | `core/api_router.py` | ✅ Ollama → Groq → Gemini → Hyperspace |
-| Contexto compartido | `core/context.py` | ✅ AgentContext tipado |
-| Base de agente | `core/base_agent.py` | ✅ Tracing automático |
+| Contexto compartido | `core/context.py` | ✅ AgentContext tipado + ctx.mcp_call() |
+| Base de agente | `core/base_agent.py` | ✅ Tracing + memoria episódica automática |
 | Memoria SQLite+Supabase | `infrastructure/memory_manager.py` | ✅ Persistencia dual |
-| MCPHub (13 MCPs) | `infrastructure/mcp_hub.py` | ⚠️ Implementado, no conectado |
+| MCPHub (13 MCPs) | `infrastructure/mcp_hub.py` | ✅ Conectado a AgentContext (v2.2.2) |
 | Audit logger | `infrastructure/audit_logger.py` | ✅ Tracing por agente |
 | Input sanitizer | `infrastructure/input_sanitizer.py` | ✅ 13 patrones, 3 capas |
 | Security sandbox | `infrastructure/security_sandbox.py` | ✅ Filesystem + comandos |
 | Todos los agentes | `agents/*/` | ⚠️ Estructura real, calidad variable |
 | Dashboard UI | `ui/server.py` + `ui/index.html` | ❓ Verificar estado |
 | Tests E2E | `tests/test_e2e_pipelines.py` | ✅ 12 tests con mock LLM |
+| Smoke tests + CI | `tests/smoke/` + `.github/workflows/ci.yml` | ⚠️ 1/5 smoke tests activos (Fase 14) |
 
-### Lo que NO funciona todavía
+### Lo que aún falta completar
 
-1. **`ctx.mcp`** — `AgentContext` no expone el `MCPHub`. Los agentes no pueden llamar MCPs.
-2. **`mcp_memory` en BaseAgent** — ningún agente persiste ni recupera memoria automáticamente.
-3. **`sequential_thinking` en PlannerAgent** — el planner no usa razonamiento estructurado.
-4. **Stubs en raíz** — `agents/trading_agent.py` etc. son versiones antiguas con `pass` o lógica mínima.
-5. **Sin smoke tests** — cambios pueden romper silenciosamente flujos críticos.
+1. **Smoke tests completos** — existe `tests/smoke/test_mcp_context.py` + CI activo; faltan 4 tests adicionales (Fase 14).
+2. **Rate limiting en MCPs** — Brave Search y CoinGecko tienen límites de free tier sin throttle todavía.
+3. **CoderAgent real** — pendiente conectar `context7` + `github_mcp` (Fase 13).
+4. **ReportDistributorAgent real** — pendiente conectar `slack` MCP (Fase 13).
+5. **Dashboard UI verificado** — `ui/server.py` + `ui/index.html` existen pero no han sido auditados en v2.2.x.
 
 ---
 
@@ -67,20 +68,20 @@ python main.py --doctor
 ### Variables de entorno por prioridad
 
 ```env
-# ── OBLIGATORIAS ──────────────────────────────────────
+# ── OBLIGATORIAS ──────────────────────────────────
 GROQ_API_KEY=tu_clave              # https://console.groq.com (gratis)
 
-# ── RECOMENDADAS ──────────────────────────────────────
+# ── RECOMENDADAS ────────────────────────────────
 OLLAMA_ENABLED=true
 OLLAMA_HW_PROFILE=cpu_24gb        # ver perfiles abajo
 GEMINI_API_KEY=tu_clave           # fallback LLM
 GITHUB_TOKEN=ghp_...              # para github_mcp
 
-# ── SUPABASE (memoria cloud) ──────────────────────────
+# ── SUPABASE (memoria cloud) ────────────────────────
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_KEY=tu_anon_key
 
-# ── MCPs opcionales ───────────────────────────────────
+# ── MCPs opcionales ───────────────────────────────
 BRAVE_API_KEY=your_key            # para brave_search
 CONTEXT7_API_KEY=your_key         # para context7
 DEEPWIKI_API_KEY=your_key         # para deepwiki
@@ -90,7 +91,7 @@ N8N_WEBHOOK_URL=https://...       # para n8n
 COINGECKO_API_KEY=your_key        # opcional, free tier sin key
 MCP_TIMEOUT=30                    # timeout en segundos
 
-# ── SEGURIDAD ─────────────────────────────────────────
+# ── SEGURIDAD ───────────────────────────────────
 GITHUB_CONFIRM_BEFORE_PUSH=true
 ```
 
@@ -119,11 +120,14 @@ examples/      → scripts ejecutables por pipeline
 
 ### ¿Por qué hay archivos sueltos en `agents/`?
 
-`agents/trading_agent.py`, `agents/qa_agent.py`, etc. son **stubs de una versión anterior** (Fase 3). Los sub-agentes reales están en `agents/trading/`, `agents/qa/`, etc. Los stubs deben eliminarse en Fase 12.
+`agents/trading_agent.py`, `agents/qa_agent.py`, etc. son **tombstones de compatibilidad** desde v2.2.2.
+Redirigen a los sub-agentes reales en `agents/trading/`, `agents/qa/`, etc.
+No usarlos en código nuevo. Se eliminarán en v3.
 
 ### ¿Por qué existen `orchestrator.py` y `pipeline.py` en `core/`?
 
-Son de una versión temprana antes de que `Maestro` + `PipelineRouter` + `LoopController` reemplazaran esa lógica. Deben evaluarse y eliminarse si no tienen código activo. Ver `ROADMAP.md → Fase 12 - Paso 3`.
+Son aliases de compatibilidad desde v2.2.2. `Maestro` + `PipelineRouter` + `LoopController`
+son los entrypoints reales. Los aliases se eliminarán en v3.
 
 ---
 
@@ -141,27 +145,25 @@ class NombreAgent(BaseAgent):
     """
 
     async def run(self, context: AgentContext) -> AgentContext:
-        # 1. Leer inputs del contexto
+        # Memoria previa disponible automáticamente (BaseAgent._before_run)
         task = context.task
         prev_output = context.get("prev_agent_output")
 
-        # 2. Llamar MCP si está disponible (cuando MCPHub esté conectado)
-        # if context.mcp.is_available("brave_search"):
-        #     results = await context.mcp.call("brave_search", "search", {"query": task})
+        # Llamar MCP — funciona desde v2.2.2
+        if context.is_mcp_available("brave_search"):
+            results = await context.mcp_call(
+                "brave_search", "search", {"query": task}
+            )
 
-        # 3. Construir prompt
         prompt = f"""
         Tarea: {task}
         Contexto previo: {prev_output}
         ...
         """
 
-        # 4. Llamar LLM
         response = await self.llm(prompt, context)
-
-        # 5. Escribir output al contexto
         context.set("nombre_output", response)
-
+        # Memoria guardada automáticamente (BaseAgent._after_run)
         return context
 ```
 
@@ -169,12 +171,10 @@ class NombreAgent(BaseAgent):
 
 ## Cómo llamar un MCP
 
-> ⚠️ Esto funcionará una vez que se complete Fase 12 - Paso 1 (conectar MCPHub a AgentContext).
-
 ```python
 # Verificar disponibilidad
-if context.mcp.is_available("brave_search"):
-    results = await context.mcp.call(
+if context.is_mcp_available("brave_search"):
+    results = await context.mcp_call(
         "brave_search",
         "search",
         {"query": "Bitcoin 2026", "count": 10}
@@ -193,21 +193,21 @@ print(context.mcp.status())
 ### MCPs que funcionan sin ninguna configuración
 
 ```python
-# mcp_memory — guardar y recuperar memoria
-await context.mcp.call("mcp_memory", "save", {"key": "...", "value": "..."})
-await context.mcp.call("mcp_memory", "retrieve", {"key": "..."})
+# mcp_memory — guardar y recuperar memoria (automático vía BaseAgent)
+await context.mcp_call("mcp_memory", "save", {"key": "...", "value": "..."})
+await context.mcp_call("mcp_memory", "retrieve", {"key": "..."})
 
 # sequential_thinking — razonamiento estructurado
-await context.mcp.call("sequential_thinking", "decompose", {"problem": task, "steps": 5})
+await context.mcp_call("sequential_thinking", "decompose", {"problem": task, "steps": 5})
 
 # coingecko — datos de criptomonedas
-await context.mcp.call("coingecko", "get_price", {"ids": "bitcoin", "vs_currencies": "usd"})
+await context.mcp_call("coingecko", "get_price", {"ids": "bitcoin", "vs_currencies": "usd"})
 
 # semgrep — análisis de seguridad
-await context.mcp.call("semgrep", "scan", {"code": source_code, "language": "python"})
+await context.mcp_call("semgrep", "scan", {"code": source_code, "language": "python"})
 
 # playwright — automatización web
-await context.mcp.call("playwright", "navigate", {"url": "https://..."})
+await context.mcp_call("playwright", "navigate", {"url": "https://..."})
 ```
 
 ---
@@ -222,6 +222,7 @@ pytest tests/ -v
 pytest tests/test_pipeline_imports.py -v     # 52 agentes + 12 pipelines
 pytest tests/test_e2e_pipelines.py -v        # 12 tests E2E con mock LLM
 pytest tests/test_input_sanitizer.py -v      # Seguridad de inputs
+pytest tests/smoke/test_mcp_context.py -v    # MCPHub + AgentContext (CI activo)
 
 # Con cobertura
 pytest tests/ --cov=core --cov=agents --cov-report=term-missing
@@ -230,12 +231,12 @@ pytest tests/ --cov=core --cov=agents --cov-report=term-missing
 ### Smoke tests pendientes (Fase 14)
 
 ```bash
-# Estos tests NO existen todavía — crearlos es prioridad en Fase 14
-pytest tests/test_smoke.py::test_pipeline_classification
-pytest tests/test_smoke.py::test_loop_controller_retry
-pytest tests/test_smoke.py::test_mcp_hub_fallback
-pytest tests/test_smoke.py::test_supabase_persistence
-pytest tests/test_smoke.py::test_api_router_fallback
+# Faltan 4 de 5 smoke tests — crearlos es prioridad en Fase 14
+pytest tests/smoke/test_pipeline_classification.py
+pytest tests/smoke/test_loop_controller_retry.py
+pytest tests/smoke/test_mcp_hub_fallback.py
+pytest tests/smoke/test_supabase_persistence.py
+pytest tests/smoke/test_api_router_fallback.py
 ```
 
 ---
@@ -252,7 +253,7 @@ python main.py --doctor
 ```python
 # Verificar que el import en maestro.py apunta al directorio correcto
 # ✅ from agents.trading.backtest_reader import BacktestReaderAgent
-# ❌ from agents.trading_agent import TradingAgent  ← stub antiguo
+# ❌ from agents.trading_agent import TradingAgent  ← tombstone, no usarlo en código nuevo
 ```
 
 ### Un MCP no responde
@@ -319,6 +320,17 @@ trading · analytics · marketing · product · security_audit · design
 ---
 
 ## Changelog
+
+### v2.2.2 (Abril 2026)
+- `core/context.py` — `AgentContext.inject_mcp()` + helpers `is_mcp_available()` / `mcp_call()`
+- `core/base_agent.py` — hooks `_before_run()` / `_after_run()` para memoria episódica automática
+- `agents/dev/planner_agent.py` v2 — usa `sequential_thinking` MCP para descomposición de tareas
+- `agents/research/` v2 — WebScoutAgent (brave_search + fallback), AnalystAgent, ThesisAgent
+- `agents/trading/data_agent.py` v2 — coingecko + okx + supabase_mcp como pipeline TRADING etapa 0
+- Stubs en `agents/` raíz convertidos en tombstones de compatibilidad (PR-2)
+- `core/orchestrator.py` y `core/pipeline.py` — aliases de compatibilidad hacia Maestro / PipelineRouter
+- Logging centralizado en `data/claw.log` + AuditLogger sincronizado con Supabase
+- `tests/smoke/test_mcp_context.py` + `.github/workflows/ci.yml` — CI activo en cada push
 
 ### v2.1.0 (Abril 2026)
 - `infrastructure/mcp_hub.py` — proxy universal para 13 MCPs
