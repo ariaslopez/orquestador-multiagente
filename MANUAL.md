@@ -1,7 +1,7 @@
 # MANUAL TÉCNICO — CLAW Agent System
 
 > Guía completa para desarrollar, depurar y extender el sistema.
-> Versión: 2.2.2 · Última actualización: Abril 8, 2026
+> Versión: 2.3.0 · Última actualización: Abril 8, 2026
 
 ---
 
@@ -22,8 +22,13 @@
 | Audit logger | `infrastructure/audit_logger.py` | ✅ Tracing por agente |
 | Input sanitizer | `infrastructure/input_sanitizer.py` | ✅ 13 patrones, 3 capas |
 | Security sandbox | `infrastructure/security_sandbox.py` | ✅ Filesystem + comandos |
-| Todos los agentes | `agents/*/` | ⚠️ Estructura real, calidad variable |
-| Dashboard UI | `ui/server.py` + `ui/index.html` | ❓ Verificar estado |
+| PlannerAgent v2 | `agents/dev/planner_agent.py` | ✅ sequential_thinking + memoria (v2.2.2) |
+| WebScoutAgent v2 | `agents/research/web_scout_agent.py` | ✅ brave_search + fallback DDG (v2.2.2) |
+| DataAgent v2 | `agents/trading/data_agent.py` | ✅ coingecko + okx + supabase_mcp (v2.2.2) |
+| CoderAgent v2 | `agents/dev/coder_agent.py` | ✅ context7 + github_mcp (v2.3.0) |
+| ReportDistributorAgent v2 | `agents/analytics/report_distributor.py` | ✅ supabase_mcp + slack (v2.3.0) |
+| Resto de agentes | `agents/*/` | ⚠️ Estructura real, calidad variable |
+| Dashboard UI | `ui/server.py` + `ui/index.html` | ❓ Verificar estado en v2.3.x |
 | Tests E2E | `tests/test_e2e_pipelines.py` | ✅ 12 tests con mock LLM |
 | Smoke tests + CI | `tests/smoke/` + `.github/workflows/ci.yml` | ⚠️ 1/5 smoke tests activos (Fase 14) |
 
@@ -31,9 +36,8 @@
 
 1. **Smoke tests completos** — existe `tests/smoke/test_mcp_context.py` + CI activo; faltan 4 tests adicionales (Fase 14).
 2. **Rate limiting en MCPs** — Brave Search y CoinGecko tienen límites de free tier sin throttle todavía.
-3. **CoderAgent real** — pendiente conectar `context7` + `github_mcp` (Fase 13).
-4. **ReportDistributorAgent real** — pendiente conectar `slack` MCP (Fase 13).
-5. **Dashboard UI verificado** — `ui/server.py` + `ui/index.html` existen pero no han sido auditados en v2.2.x.
+3. **Dashboard UI verificado** — `ui/server.py` + `ui/index.html` existen pero no han sido auditados en v2.3.x.
+4. **Skills system** — `skills/` aún no existe en el repo; está diseñado y pendiente de implementar (Fase 17-A).
 
 ---
 
@@ -68,10 +72,10 @@ python main.py --doctor
 ### Variables de entorno por prioridad
 
 ```env
-# ── OBLIGATORIAS ──────────────────────────────────
+# ── OBLIGATORIAS ────────────────────────────────
 GROQ_API_KEY=tu_clave              # https://console.groq.com (gratis)
 
-# ── RECOMENDADAS ────────────────────────────────
+# ── RECOMENDADAS ──────────────────────────────
 OLLAMA_ENABLED=true
 OLLAMA_HW_PROFILE=cpu_24gb        # ver perfiles abajo
 GEMINI_API_KEY=tu_clave           # fallback LLM
@@ -81,7 +85,7 @@ GITHUB_TOKEN=ghp_...              # para github_mcp
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_KEY=tu_anon_key
 
-# ── MCPs opcionales ───────────────────────────────
+# ── MCPs opcionales ─────────────────────────────
 BRAVE_API_KEY=your_key            # para brave_search
 CONTEXT7_API_KEY=your_key         # para context7
 DEEPWIKI_API_KEY=your_key         # para deepwiki
@@ -91,7 +95,7 @@ N8N_WEBHOOK_URL=https://...       # para n8n
 COINGECKO_API_KEY=your_key        # opcional, free tier sin key
 MCP_TIMEOUT=30                    # timeout en segundos
 
-# ── SEGURIDAD ───────────────────────────────────
+# ── SEGURIDAD ───────────────────────────────
 GITHUB_CONFIRM_BEFORE_PUSH=true
 ```
 
@@ -111,6 +115,7 @@ GITHUB_CONFIRM_BEFORE_PUSH=true
 ```
 core/          → orquestación pura, sin I/O externo
 agents/        → un directorio por pipeline, un archivo por agente
+skills/        → recetas declarativas por pipeline (Fase 17-A, pendiente)
 infrastructure/→ servicios de soporte (memoria, seguridad, MCPs)
 tools/         → funciones utilitarias sin estado propio
 ui/            → servidor FastAPI + frontend
@@ -208,6 +213,193 @@ await context.mcp_call("semgrep", "scan", {"code": source_code, "language": "pyt
 
 # playwright — automatización web
 await context.mcp_call("playwright", "navigate", {"url": "https://..."})
+```
+
+---
+
+## Cómo escribir skills (`skills/*.md`)
+
+> Las skills son documentación estructurada que guía al orquestador sobre
+> cómo usar los agentes de un pipeline para resolver una tarea concreta.
+> **No son código Python**, pero forman parte del contrato del sistema.
+> El directorio `skills/` se creará en Fase 17-A; este apartado es la guía de diseño.
+
+### Estructura esperada
+
+```text
+skills/
+  shared/
+    schema.md          # Formato canónico + ejemplos
+    safety_guards.md   # Reglas globales (no credenciales, no push sin confirmar, etc.)
+
+  <pipeline>/
+    claude.md          # Orquestador conceptual del pipeline
+    skills/
+      <nombre>.md      # Una skill = un flujo reutilizable
+```
+
+### Pipelines con skills planificadas (v1)
+
+| Pipeline | claude.md | Skills mínimas |
+|---|---|---|
+| `dev` | ⏳ pendiente | implement_feature, code_review, write_tests, refactor_module |
+| `research` | ⏳ pendiente | web_research, competitor_analysis, summarize_sources |
+| `content` | ⏳ pendiente | longform_to_social, newsletter_issue, landing_copy |
+| `office` | ⏳ pendiente | meeting_notes, task_extraction, email_reply |
+| `qa` | ⏳ pendiente | static_audit, test_plan, regression_suite |
+| `pm` | ⏳ pendiente | roadmap_from_ideas, sprint_planning, backlog_grooming |
+| `analytics` | ⏳ pendiente | kpi_report, funnel_analysis, cohort_analysis |
+| `marketing` | ⏳ pendiente | campaign_brief, audience_persona, multi_channel_post, content_calendar |
+| `product` | ⏳ pendiente | problem_interview, feature_brief, prioritization_rice |
+| `security_audit` | ⏳ pendiente | threat_model, code_security_review, compliance_gap |
+| `design` | ⏳ pendiente | ui_review, ux_audit, brand_system |
+| `trading` | ❌ excluido v1 | Se incorpora en v2 de Fase 17-A |
+
+### Plantilla mínima de `claude.md`
+
+Cada `skills/<pipeline>/claude.md` debe incluir:
+
+```md
+# <PIPELINE> pipeline — claude.md
+
+Rol:
+  Qué problema resuelve y en qué contextos se activa.
+
+Agentes disponibles:
+  - NombreAgent → agents/<pipeline>/<nombre>_agent.py: qué hace
+  - ...
+
+Skills autorizadas:
+  - nombre_skill_1
+  - nombre_skill_2
+
+MCPs permitidos:
+  - mcp_memory
+  - sequential_thinking
+  - (whitelist sobre los 13 MCPs del hub)
+
+Restricciones de seguridad:
+  - Ejemplos: no push a main sin confirmación, no instalar deps sin justificación,
+    no ejecutar código externo sin sandbox, etc.
+
+Política de calidad (criterios de "done"):
+  - ...
+```
+
+### Plantilla mínima de skill `.md`
+
+Campos canónicos (definidos en `skills/shared/schema.md` cuando exista):
+
+```md
+name: <nombre_snake_case>
+pipeline: <pipeline>
+version: 1.0.0
+
+description:
+  Qué resuelve y qué entrega (2–3 frases).
+
+required_inputs:
+  - input_1
+  - input_2
+
+optional_inputs:
+  - input_3: default_value
+
+agents_involved:
+  - NombreAgent1: rol en esta skill
+  - NombreAgent2: rol en esta skill
+
+tools:
+  - mcp_memory
+  - sequential_thinking
+  - brave_search
+
+steps:
+  1. Paso de alto nivel 1.
+  2. Paso de alto nivel 2.
+  3. ...
+
+output_format:
+  Describe la estructura esperada del output (Markdown, JSON, lista de items, etc.).
+
+quality_criteria:
+  - Criterio verificable 1.
+  - Criterio verificable 2.
+
+failure_modes:
+  - Modo de fallo: qué hacer si ocurre.
+
+examples:
+  - input: "..."
+    expected_output: "..."
+```
+
+### Ejemplo real: `skills/marketing/skills/multi_channel_post.md`
+
+```md
+name: multi_channel_post
+pipeline: marketing
+version: 1.0.0
+
+description:
+  Dada una idea o pieza de contenido largo, genera versiones optimizadas para
+  múltiples canales (X, LinkedIn, Instagram, YouTube, newsletter) respetando
+  el tono de marca. Entrega un doc con copies listos y calendario sugerido.
+
+required_inputs:
+  - objetivo_de_comunicacion
+  - publico_objetivo
+  - canales_destino
+  - asset_base (texto largo, URL o brief)
+
+optional_inputs:
+  - tono: profesional
+  - idioma: es
+
+agents_involved:
+  - StrategyAgent: define angulos de mensaje por audiencia
+  - CopyAgent: genera copy por canal con variaciones
+  - AnalyticsAgent: propone metricas de exito por canal
+
+tools:
+  - mcp_memory
+  - brave_search
+  - supabase_mcp
+
+steps:
+  1. Clarificar objetivo y metricas de exito.
+  2. Derivar 2-3 angulos de mensaje por audiencia.
+  3. Disenar formato optimo por canal.
+  4. Generar copy por canal con 1-2 variaciones.
+  5. Proponer prompts visuales y notas para diseno.
+  6. Armar calendario editorial sugerido.
+
+output_format:
+  Markdown con tabla de posts por canal o JSON con lista estructurada.
+
+quality_criteria:
+  - Cada canal tiene al menos 2 variaciones de copy.
+  - El tono de marca es consistente entre canales.
+  - El calendario incluye fechas, hora sugerida y formato por red.
+
+failure_modes:
+  - Inputs pobres: pedir clarificacion antes de generar.
+  - brave_search no disponible: generar sin contexto externo y advertirlo.
+```
+
+### Integrar una skill con Maestro (Fase 17-A)
+
+Cuando el sistema esté implementado, Maestro cargará el `claude.md` del pipeline
+seleccionado y buscará la skill más afin a la tarea. El proceso es solo lectura
+de archivos `.md`; no hay cambios en `PipelineRouter` ni en los agentes Python.
+
+```
+Maestro.classify(task)
+  → pipeline seleccionado
+  → carga skills/<pipeline>/claude.md
+  → busca skill más afin (keywords o embeddings)
+  → inyecta skill en AgentContext como "guia de ejecucion"
+  → ejecuta pipeline normal (PipelineRouter sin cambios)
 ```
 
 ---
@@ -316,21 +508,30 @@ trading · analytics · marketing · product · security_audit · design
 4. Actualizar `ROADMAP.md` marcando ítems completados
 5. Si creas un agente nuevo, seguir la estructura de `NombreAgent` documentada arriba
 6. Si conectas un MCP nuevo, agregarlo a la tabla de `README.md`
+7. Si creas una skill nueva, seguir la plantilla de esta sección y agregarla a la tabla
+   de `ARCHITECTURE.md` (sección "Sistema de Skills")
 
 ---
 
 ## Changelog
+
+### v2.3.0 (Abril 2026)
+- `agents/dev/coder_agent.py` v2 — context7 + github_mcp reales (Fase 13 PR-5)
+- `agents/analytics/report_distributor.py` v2 — supabase_mcp + slack (Fase 13 PR-6)
+- Fase 13 completada: los 5 agentes core reales están operativos
+- Diseño del sistema de skills (`skills/`) documentado en ARCHITECTURE + MANUAL
+- README y MANUAL sincronizados con v2.3.0
 
 ### v2.2.2 (Abril 2026)
 - `core/context.py` — `AgentContext.inject_mcp()` + helpers `is_mcp_available()` / `mcp_call()`
 - `core/base_agent.py` — hooks `_before_run()` / `_after_run()` para memoria episódica automática
 - `agents/dev/planner_agent.py` v2 — usa `sequential_thinking` MCP para descomposición de tareas
 - `agents/research/` v2 — WebScoutAgent (brave_search + fallback), AnalystAgent, ThesisAgent
-- `agents/trading/data_agent.py` v2 — coingecko + okx + supabase_mcp como pipeline TRADING etapa 0
+- `agents/trading/data_agent.py` v2 — coingecko + okx + supabase_mcp
 - Stubs en `agents/` raíz convertidos en tombstones de compatibilidad (PR-2)
-- `core/orchestrator.py` y `core/pipeline.py` — aliases de compatibilidad hacia Maestro / PipelineRouter
+- `core/orchestrator.py` y `core/pipeline.py` — aliases de compatibilidad
 - Logging centralizado en `data/claw.log` + AuditLogger sincronizado con Supabase
-- `tests/smoke/test_mcp_context.py` + `.github/workflows/ci.yml` — CI activo en cada push
+- `tests/smoke/test_mcp_context.py` + `.github/workflows/ci.yml` — CI activo
 
 ### v2.1.0 (Abril 2026)
 - `infrastructure/mcp_hub.py` — proxy universal para 13 MCPs
