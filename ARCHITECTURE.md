@@ -60,6 +60,161 @@ AGENT_REGISTRY (70 roles)
 
 ---
 
+## Sub-agentes y colaboradores por pipeline crítico
+
+> **Contexto:** Esta sección documenta la propuesta de sub-agentes colaboradores
+> resultado de la auditoría de Abril 2026. Aplica dos patrones:
+>
+> - **Nuevo agente en el pipeline** — cuando el colaborador necesita memoria propia,
+>   logs, métricas o reutilización independiente. Se modela como un paso más del pipeline.
+> - **Lógica interna del agente** — cuando es un microdetalle de calidad interno al agente
+>   (más MCPs, más prompts, validación local). Se mantiene dentro del `run()` existente.
+>
+> El criterio de decisión: ¿quieres medir, testear o reusar ese colaborador por separado?
+> Si sí → agente nuevo. Si no → lógica interna.
+
+### DEV — Sub-agentes colaboradores propuestos
+
+```
+PlannerAgent → [RefactorAnalyzer*] → CoderAgent → [TestValidatorAgent*] → ReviewerAgent → SecurityAgent → ExecutorAgent → [GitConfirmAgent*] → GitAgent
+
+* = sub-agente colaborador propuesto
+```
+
+| Sub-agente propuesto | Patrón | Función | MCPs |
+|---|---|---|---|
+| `RefactorAnalyzer` | Nuevo agente (paso 2) | Analiza el codebase antes de codear: detecta módulos afectados, dependencias y riesgo de regresión | `context7` + `github_mcp` |
+| `TestValidatorAgent` | Nuevo agente (paso 4) | Valida que el código generado tiene tests mínimos antes de pasar a Review | `playwright` (smoke) |
+| `GitConfirmAgent` | Lógica interna de GitAgent | Solicita confirmación antes de push a main; crea rama feature/* automáticamente | `github_mcp` |
+
+**Pipeline extendido (config.yaml):**
+```yaml
+dev:
+  agents: [planner, refactor_analyzer, coder, test_validator, reviewer, security, executor, git]
+  mode: sequential
+```
+
+**Criterio de done:** `RefactorAnalyzer` y `TestValidatorAgent` se implementan en Fase 17-B
+junto con GitAgent real. `GitConfirmAgent` es lógica interna de `git_agent.py`.
+
+---
+
+### RESEARCH — Sub-agentes colaboradores propuestos
+
+```
+WebScoutAgent ──┐
+                ├→ [SourceValidatorAgent*] → AnalystAgent → [BiasDetectorAgent*] → ThesisAgent
+DataAgent ──────┘
+
+* = sub-agente colaborador propuesto
+```
+
+| Sub-agente propuesto | Patrón | Función | MCPs |
+|---|---|---|---|
+| `SourceValidatorAgent` | Nuevo agente (paralelo → paso 3) | Valida calidad y credibilidad de fuentes recolectadas (deduplicación, scoring de dominio, fecha) | `mcp_memory` |
+| `BiasDetectorAgent` | Lógica interna de AnalystAgent | Detecta sesgo en síntesis: fuentes unilaterales, falta de perspectivas contrarias | `sequential_thinking` |
+
+**Pipeline extendido (config.yaml):**
+```yaml
+research:
+  agents: [web_scout, data, source_validator, analyst, thesis]
+  mode: parallel_then_sequential
+  parallel_agents: [web_scout, data]
+  sequential_agents: [source_validator, analyst, thesis]
+```
+
+**Prioridad:** Alta. `SourceValidatorAgent` mejora directamente la calidad de la tesis de inversión.
+Implementar junto con rate limiting de MCPHub en Fase 14.
+
+---
+
+### QA — Sub-agentes colaboradores propuestos
+
+```
+StaticAnalyzer → BugHunter → [RegressionAgent*] → SecurityReviewer → PerformanceProfiler → [ReportFormatterAgent*] → TestGenerator
+
+* = sub-agente colaborador propuesto
+```
+
+| Sub-agente propuesto | Patrón | Función | MCPs |
+|---|---|---|---|
+| `RegressionAgent` | Nuevo agente (paso 3) | Verifica que los bugs encontrados por BugHunter no rompen tests existentes | `playwright` |
+| `ReportFormatterAgent` | Nuevo agente (paso 6) | Consolida todos los findings en un reporte estructurado con severidades OWASP | `supabase_mcp` |
+
+**Pipeline extendido (config.yaml):**
+```yaml
+qa:
+  agents: [static_analyzer, bug_hunter, regression_agent, security_reviewer, performance_profiler, report_formatter, test_generator]
+  mode: sequential
+```
+
+**Prioridad:** Media. `ReportFormatterAgent` es el más impactante porque standariza el output
+de QA y lo hace consumible por SECURITY_AUDIT y por el dashboard UI.
+
+---
+
+### TRADING — Sub-agentes colaboradores propuestos
+
+```
+BacktestReader → [DataEnricherAgent*] → MetricsCalculator → RiskAnalyzer → [ScenarioSimulatorAgent*] → StrategyAdvisor
+
+* = sub-agente colaborador propuesto
+```
+
+| Sub-agente propuesto | Patrón | Función | MCPs |
+|---|---|---|---|
+| `DataEnricherAgent` | Nuevo agente (paso 2) | Enriquece backtests con datos on-chain, noticias y correlaciones de mercado | `coingecko` + `brave_search` |
+| `ScenarioSimulatorAgent` | Lógica interna de RiskAnalyzer | Simula N escenarios de mercado (bull/bear/black swan) sobre la estrategia | `coingecko` |
+
+**Prioridad:** Media. `DataEnricherAgent` se implementa en Fase 17-B.
+`ScenarioSimulatorAgent` es lógica interna de `risk_analyzer.py`, implementar en la
+revisión de calidad de Fase 14-post.
+
+---
+
+### ANALYTICS — Sub-agentes colaboradores propuestos
+
+```
+DataCollector → [DataValidatorAgent*] → InsightGenerator → [TrendComparatorAgent*] → ReportDistributor
+
+* = sub-agente colaborador propuesto
+```
+
+| Sub-agente propuesto | Patrón | Función | MCPs |
+|---|---|---|---|
+| `DataValidatorAgent` | Nuevo agente (paso 2) | Valida integridad de datos: nulls, outliers, esquema; rechaza datos corruptos antes de análisis | `supabase_mcp` |
+| `TrendComparatorAgent` | Lógica interna de InsightGenerator | Compara KPIs actuales vs período anterior y marca tendencias significativas | `supabase_mcp` |
+
+**Prioridad:** Alta. `DataValidatorAgent` evita análisis con datos corruptos (fallo silencioso
+más crítico de este pipeline). Implementar junto con contratos de datos en Fase 15.
+
+---
+
+### SECURITY_AUDIT — Sub-agentes colaboradores propuestos
+
+```
+ThreatModeler → [AttackSurfaceMapperAgent*] → CodeReviewer → ComplianceChecker → [RemediationAdvisorAgent*]
+
+* = sub-agente colaborador propuesto
+```
+
+| Sub-agente propuesto | Patrón | Función | MCPs |
+|---|---|---|---|
+| `AttackSurfaceMapperAgent` | Nuevo agente (paso 2) | Mapea superficie de ataque: endpoints públicos, inputs, dependencias, secrets | `semgrep` + `github_mcp` |
+| `RemediationAdvisorAgent` | Nuevo agente (paso 5) | Por cada finding, genera ticket con: descripción, severidad, fix sugerido y test de regresión | `supabase_mcp` + `mcp_memory` |
+
+**Pipeline extendido (config.yaml):**
+```yaml
+security_audit:
+  agents: [threat_modeler, attack_surface_mapper, code_reviewer, compliance_checker, remediation_advisor]
+  mode: sequential
+```
+
+**Prioridad:** Alta. `RemediationAdvisorAgent` cierra el loop de seguridad convirtiendo findings
+en acciones concretas con trazabilidad. Es el sub-agente de mayor ROI de este pipeline.
+
+---
+
 ## DEV pipeline
 
 **Trigger keywords:** `crea`, `genera`, `construye`, `proyecto`, `api`, `app`, `código`, `refactor`
