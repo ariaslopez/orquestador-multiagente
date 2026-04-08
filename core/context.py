@@ -1,5 +1,13 @@
 """AgentContext — Estado compartido entre agentes durante una sesión.
 
+Cambios v2.2.2 (PR-1 — MCPHub + memoria):
+  - Nuevo campo _mcp_hub: referencia al singleton MCPHub inyectada por Maestro.
+  - inject_mcp(): Maestro llama este método justo después de crear el ctx.
+  - is_mcp_available(): guard idiomático para agentes — sin imports externos.
+  - mcp_call(): proxy directo a MCPHub.call() — un agente puede usar MCPs
+    con una sola línea: await ctx.mcp_call("brave_search", "search", {...})
+  - _mcp_hub excluido de to_dict() para evitar error de serialización.
+
 Cambios v2.2.1 (fix audit):
   - Bug D: output_path agregado a to_dict() — antes se perdia en
     la serialización a SQLite/Supabase.
@@ -58,6 +66,13 @@ class AgentContext:
     error:  Optional[str] = None
 
     # ------------------------------------------------------------------
+    # MCPHub — inyectado por Maestro, NO serializado
+    # ------------------------------------------------------------------
+    # No se declara como campo de dataclass para evitar que aparezca en
+    # __init__, __repr__ y to_dict(). Se asigna directamente en inject_mcp().
+    # Tipo: Optional[MCPHub] — importación lazy para evitar circular imports.
+
+    # ------------------------------------------------------------------
     # Helpers de logging
     # ------------------------------------------------------------------
 
@@ -112,6 +127,62 @@ class AgentContext:
         return (datetime.utcnow() - self.started_at).total_seconds()
 
     # ------------------------------------------------------------------
+    # MCPHub — inyección y acceso
+    # ------------------------------------------------------------------
+
+    def inject_mcp(self, hub) -> None:
+        """
+        Inyecta el singleton MCPHub en el contexto.
+
+        Llamado por Maestro inmediatamente después de crear AgentContext:
+            ctx = AgentContext(...)
+            ctx.inject_mcp(self.mcp_hub)
+
+        No se expone como campo de dataclass para mantener to_dict() limpio
+        y evitar errores de serialización al guardar en Supabase/SQLite.
+        """
+        object.__setattr__(self, "_mcp_hub", hub)
+
+    def is_mcp_available(self, server: str) -> bool:
+        """
+        Guard idiomático para agentes antes de llamar un MCP.
+
+        Uso en un agente:
+            if ctx.is_mcp_available("brave_search"):
+                results = await ctx.mcp_call("brave_search", "search", {"query": q})
+        """
+        hub = getattr(self, "_mcp_hub", None)
+        if hub is None:
+            return False
+        return server in hub.available()
+
+    async def mcp_call(
+        self,
+        server: str,
+        tool: str,
+        params: Dict[str, Any] = None,
+        timeout: int = None,
+    ) -> Any:
+        """
+        Llama una herramienta MCP directamente desde el contexto.
+
+        Proxy hacia MCPHub.call() — sin imports en el agente.
+
+        Uso en un agente:
+            price = await ctx.mcp_call("coingecko", "get_price", {"ids": "bitcoin"})
+            plan  = await ctx.mcp_call("sequential_thinking", "think", {"problem": "..."})
+
+        Retorna None si el MCP no está disponible o falla (nunca lanza).
+        """
+        hub = getattr(self, "_mcp_hub", None)
+        if hub is None:
+            return None
+        kwargs = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        return await hub.call(server, tool, params or {}, **kwargs)
+
+    # ------------------------------------------------------------------
     # Serialización
     # ------------------------------------------------------------------
 
@@ -119,6 +190,7 @@ class AgentContext:
         """
         Serializa el contexto para guardarlo en Supabase o SQLite.
         Bug D fix: output_path ahora incluido en la serialización.
+        Nota: _mcp_hub se excluye explícitamente (no serializable).
         """
         return {
             "session_id":          self.session_id,
