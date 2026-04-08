@@ -1,6 +1,6 @@
 # 🤖 CLAW Agent System — Orquestador Multi-Agente
 
-**Versión:** 2.1.0 · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
+**Versión:** 2.2.0-dev · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
 
 Sistema de inteligencia artificial multi-agente diseñado para automatizar trabajo de desarrollo, investigación, contenido, análisis, marketing, producto, diseño y seguridad. Un Maestro central clasifica cada tarea y la delega al pipeline correcto. Los agentes colaboran en secuencia o en paralelo, compartiendo un contexto tipado (`AgentContext`) y accediendo a 13 herramientas MCP externas.
 
@@ -26,8 +26,8 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
                                                          ▼
                     ┌────────────────────────────────────────────┐
                     │            AgentContext tipado              │
-                    │  Memoria · Logs · Observability · MCPHub   │
-                    │        (SQLite + Supabase + 13 MCPs)        │
+                    │  ctx.mcp · ctx.memory · Logs · Audit       │
+                    │   (SQLite + Supabase + 13 MCPs activos)     │
                     └────────────────────────────────────────────┘
 ```
 
@@ -37,19 +37,26 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 - `core/pipeline_router.py` — Ejecutor: secuencial o `parallel_then_sequential`.
 - `core/loop_controller.py` — Control de reintentos y recovery automático.
 - `core/api_router.py` — Router de LLMs: Ollama (local) → Groq → Gemini → Hyperspace.
-- `core/context.py` — `AgentContext` tipado: estado compartido entre agentes.
-- `core/base_agent.py` — Contrato base con tracing automático.
+- `core/context.py` — `AgentContext` tipado: estado compartido entre agentes. **Incluye `ctx.mcp` → MCPHub.**
+- `core/base_agent.py` — Contrato base con tracing automático + **memoria persistente pre/post run().**
 - `infrastructure/memory_manager.py` — Memoria: SQLite local + sync a Supabase.
-- `infrastructure/mcp_hub.py` — Proxy universal para 13 MCPs externos.
+- `infrastructure/mcp_hub.py` — Proxy universal para 13 MCPs externos. **Conectado a AgentContext.**
 - `infrastructure/audit_logger.py` — Tracing de agentes + métricas de pipeline.
 - `infrastructure/input_sanitizer.py` — Anti prompt-injection (13 patrones, 3 capas).
 - `infrastructure/security_sandbox.py` — Sandbox de filesystem y comandos.
 
-### ⚠️ Estado crítico conocido (pendiente)
+### 🚧 Estado de integración (Fase 12 en progreso)
 
-> `MCPHub` está implementado en `infrastructure/mcp_hub.py` pero **aún no está conectado a `AgentContext`**.
-> Los 13 MCPs no son accesibles por los agentes hasta completar el Paso 1 de la Fase 12.
-> Ver `ROADMAP.md → Fase 12` para el plan de conexión.
+| Componente | Estado | Notas |
+|---|---|---|
+| MCPHub → AgentContext (`ctx.mcp`) | 🟠 En progreso | PR-1: cambio en `context.py` + `maestro.py` |
+| mcp_memory → BaseAgent pre/post run | 🟠 En progreso | PR-1: cambio en `base_agent.py` |
+| Stubs duplicados en `agents/` raíz | 🟠 En progreso | PR-2: 6 archivos a eliminar/fusionar |
+| `core/orchestrator.py` redundante | 🟠 En progreso | PR-2: evaluar y eliminar |
+| `sequential_thinking` en PlannerAgent | 🔴 Pendiente | PR-3: requiere ctx.mcp disponible |
+| WebScoutAgent real | 🔴 Pendiente | PR-3: brave_search + mcp_memory |
+| DataAgent real | 🔴 Pendiente | PR-3: coingecko + supabase_mcp |
+| Smoke tests críticos | 🔴 Pendiente | PR-4: 5 tests + CI básico |
 
 ---
 
@@ -115,8 +122,8 @@ Fallback 3        : Hyperspace legacy
 ```text
 orquestador-multiagente/
 ├── core/
-│   ├── base_agent.py          # Contrato base — tracing automático
-│   ├── context.py             # AgentContext tipado (estado compartido)
+│   ├── base_agent.py          # Contrato base — tracing + memoria pre/post run()
+│   ├── context.py             # AgentContext tipado — incluye ctx.mcp (MCPHub)
 │   ├── maestro.py             # Orquestador central (12 pipelines)
 │   ├── api_router.py          # Router LLMs: Ollama → Groq → Gemini → Hyperspace
 │   ├── pipeline_router.py     # Ejecutor: sequential / parallel_then_sequential
@@ -125,7 +132,7 @@ orquestador-multiagente/
 │   └── groq_client.py         # Cliente Groq directo
 ├── agents/
 │   ├── dev/                   # planner, coder, reviewer, security, executor, git
-│   ├── research/              # web_scout, data, analyst, thesis
+│   ├── research/              # web_scout (🟠 real en PR-3), data, analyst, thesis
 │   ├── content/               # topic, writer, editor, brand, scheduler
 │   ├── office/                # file_reader, data_analyzer, report_writer
 │   ├── qa/                    # static_analyzer, bug_hunter, security_reviewer,
@@ -134,6 +141,7 @@ orquestador-multiagente/
 │   │                          #   sprint_planner, roadmap_generator
 │   ├── trading/               # backtest_reader, metrics_calculator,
 │   │                          #   risk_analyzer, strategy_advisor
+│   │                          #   data_agent (🟠 real en PR-3 via coingecko+supabase)
 │   ├── analytics/             # data_collector, insight_generator, report_distributor
 │   ├── marketing/             # strategy_agent, copy_agent, growth_agent, analytics_agent
 │   ├── product/               # market_researcher, feedback_synthesizer,
@@ -142,7 +150,7 @@ orquestador-multiagente/
 │   └── design/                # ui_agent, ux_agent, brand_agent, a11y_agent, prompt_engineer
 ├── infrastructure/
 │   ├── memory_manager.py      # SQLite + Supabase
-│   ├── mcp_hub.py             # ⚠️ Proxy universal 13 MCPs — pendiente conectar a AgentContext
+│   ├── mcp_hub.py             # Proxy universal 13 MCPs — conectado a AgentContext en PR-1
 │   ├── security_layer.py      # 5 capas de protección
 │   ├── security_sandbox.py    # Sandbox filesystem/comandos
 │   ├── audit_logger.py        # Tracing de agentes + pipeline stats
@@ -150,7 +158,7 @@ orquestador-multiagente/
 │   ├── state_manager.py       # Estado de sesión
 │   └── output_manager.py      # Carpetas de salida
 ├── tools/
-│   ├── web_search.py          # DuckDuckGo
+│   ├── web_search.py          # DuckDuckGo (fallback cuando brave_search no disponible)
 │   ├── safe_filesystem.py     # Filesystem auditado
 │   ├── file_ops.py            # Operaciones de archivos
 │   ├── office_reader.py       # Office/PDF reader
@@ -178,6 +186,31 @@ orquestador-multiagente/
 
 ---
 
+## 🔧 Próximos PRs (plan de construcción activo)
+
+El sistema tiene toda la infraestructura construida. Los siguientes PRs conectan las piezas existentes sin reescribir nada estructural.
+
+```
+PR-1 (MCPHub + memoria en AgentContext/BaseAgent)  ← CRÍTICO, primer PR
+    ↓ desbloquea
+PR-3 (WebScoutAgent + PlannerAgent + DataAgent reales)
+    ↑ independiente
+PR-2 (limpieza de stubs y redundancias)
+    ↓ todo junto habilita
+PR-4 (smoke tests + CI/CD básico)
+```
+
+| PR | Título | Archivos clave | Prioridad |
+|---|---|---|---|
+| **PR-1** | `feat: conectar MCPHub + mcp_memory a AgentContext y BaseAgent` | `context.py`, `base_agent.py`, `maestro.py` | 🔴 CRÍTICO |
+| **PR-2** | `chore: eliminar stubs duplicados y archivos redundantes` | `agents/*.py` raíz, `core/orchestrator.py` | 🟠 Alta |
+| **PR-3** | `feat: WebScoutAgent + PlannerAgent + DataAgent reales` | `agents/research/web_scout.py`, `agents/dev/planner_agent.py`, `agents/trading/data_agent.py` | 🟠 Alta |
+| **PR-4** | `test: smoke tests críticos + workflow CI básico` | `tests/test_smoke_*.py`, `.github/workflows/` | 🟡 Media |
+
+> Ver `ROADMAP.md` para el detalle completo de cada fase y deuda técnica priorizada.
+
+---
+
 ## 🚀 Instalación y uso
 
 ```bash
@@ -196,112 +229,45 @@ pip install -r requirements.txt
 # 4. Configurar
 cp .env.example .env
 # Mínimo requerido: GROQ_API_KEY
-# Opcional pero recomendado: OLLAMA_ENABLED=true
+# Opcional pero recomendado: BRAVE_API_KEY, GITHUB_TOKEN, SUPABASE_URL
 
-# 5. Verificar sistema
-python main.py --doctor
+# 5. Verificar setup
+python setup.py
+
+# 6. Ejecutar
+python main.py --task "Analiza el rendimiento de BTC/USDT últimas 24h" --type trading
+python main.py --task "Crea tests unitarios para api_router.py" --type qa
+python main.py --task "Investiga mejores prácticas de RL para trading" --type research
 ```
 
-### CLI completa
+### Uso del Dashboard UI
 
 ```bash
-# Ejecución básica
-python main.py --task "API REST FastAPI para señales de trading" --type dev
-python main.py --task "Tesis de inversión Solana Q2 2026" --type research
-python main.py --task "Analiza este backtest" --type office --file data.xlsx
-python main.py --task "Audita este módulo" --type qa --file app/routes.py
-
-# Clasificación automática (sin --type)
-python main.py --task "¿Cuál es el Sharpe de este bot?"
-
-# Modos especiales
-python main.py --interactive          # Loop de tareas en terminal
-python main.py --ui                   # Dashboard → http://127.0.0.1:8000
-python main.py --doctor               # Diagnóstico completo del sistema
-python main.py --history              # Últimas 20 sesiones
-python main.py --usage                # Tokens y costos acumulados
-```
-
-### Tests
-
-```bash
-pytest tests/ -v
-pytest tests/test_pipeline_imports.py -v
-pytest tests/test_e2e_pipelines.py -v
-pytest tests/test_input_sanitizer.py -v
+cd ui && uvicorn server:app --reload --port 8000
+# Abrir: http://localhost:8000
 ```
 
 ---
 
-## 💾 Variables de entorno
+## ⚙️ Configuración de hardware
 
 ```env
-# LLM — mínimo requerido
-GROQ_API_KEY=tu_clave_groq
-
-# LLM — Ollama local (recomendado)
-OLLAMA_ENABLED=true
+# CPU puro (configuración actual — Athlon 3000G + 24 GB RAM)
 OLLAMA_HW_PROFILE=cpu_24gb
+LOCAL_GPU_LAYERS=4          # iGPU Vega 3
 
-# LLM — fallbacks
-GEMINI_API_KEY=tu_clave
+# RTX 3070 / RX 6700 XT (8 GB VRAM) — upgrade sin cambios de código
+OLLAMA_HW_PROFILE=gpu_8gb
+LOCAL_GPU_LAYERS=33
 
-# Memoria cloud
-SUPABASE_URL=...
-SUPABASE_KEY=...
-
-# MCPs — agregar según necesites
-BRAVE_API_KEY=your_key
-CONTEXT7_API_KEY=your_key
-DEEPWIKI_API_KEY=your_key
-OKX_API_KEY=your_key
-GITHUB_TOKEN=your_token
-SLACK_BOT_TOKEN=xoxb-...
-N8N_WEBHOOK_URL=https://...
-COINGECKO_API_KEY=your_key   # opcional
-MCP_TIMEOUT=30
+# RTX 4070+ (12-16 GB VRAM)
+OLLAMA_HW_PROFILE=gpu_16gb
+LOCAL_GPU_LAYERS=43
+LOCAL_CONTEXT_SIZE=65536
 ```
 
 ---
 
-## 🔐 Seguridad
+## 🤝 Contribución
 
-| Capa | Implementación |
-|---|---|
-| Paths protegidos | `C:/Windows`, `/etc`, `~/.ssh` — `config.yaml` |
-| Lista blanca comandos | Solo `pip`, `pytest`, `git`, `python`, `node`, `cargo` |
-| Shell injection | `shell=False` + `shlex.split` en todas las ejecuciones |
-| Prompt injection | `input_sanitizer.py` — 3 capas, 13 patrones |
-| Audit log | Cada operación registrada en `logs/` vía `audit_logger.py` |
-| Git confirmación | `GITHUB_CONFIRM_BEFORE_PUSH=true` por defecto |
-
-> ⚠️ **Pipeline DEV ejecuta código en el host.** El sandbox actual es la primera línea de defensa, no aislamiento a nivel OS. Para producción real: Docker efímero (Fase 15).
-
----
-
-## 📊 Madurez del sistema (v2.1.0)
-
-| Componente | Estado | Notas |
-|---|---|---|
-| Maestro + clasificación | 🟢 Sólido | 12 pipelines, keywords + LLM |
-| LoopController | 🟢 Sólido | Retry + recovery automático |
-| PipelineRouter | 🟢 Sólido | Sequential + parallel_then_sequential |
-| AuditLogger + logs | 🟢 Sólido | Tracing por agente |
-| MemoryManager | 🟢 Sólido | SQLite + Supabase sync |
-| API Router (LLMs) | 🟢 Sólido | 4 providers + fallback automático |
-| MCPHub (13 MCPs) | 🟡 Implementado | ⚠️ Pendiente conectar a AgentContext |
-| Agentes individuales | 🟡 Parcial | Stubs en raíz, sub-agentes en directorios |
-| Tests | 🟡 Básico | E2E + unit; sin smoke tests críticos |
-| Dashboard UI | ❓ Desconocido | ui/server.py + ui/index.html — verificar estado |
-
----
-
-## 📌 Próximos pasos
-
-Ver `ROADMAP.md → Fase 12` para el plan detallado. En resumen:
-
-1. **Conectar MCPHub a AgentContext** — desbloquea 13 MCPs para todos los agentes
-2. **Implementar 5 agentes core reales** — WebScout, Planner, Coder, Data, ReportDistributor
-3. **5 smoke tests críticos** — clasificación, retry, MCP fallback, persistencia, LLM fallback
-4. **Limpiar deuda técnica** — stubs en raíz, orchestrator.py/pipeline.py redundantes
-5. **Dashboard UI funcional** — métricas en tiempo real desde Supabase
+Ver `MANUAL.md` para la guía completa: convenciones de código, cómo agregar un nuevo pipeline, cómo agregar un nuevo MCP, estructura de tests.
