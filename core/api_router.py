@@ -1,17 +1,16 @@
 """APIRouter — Local-first LLM strategy con exponential backoff y CoT.
 
+Cambios v2.2.1 (fix audit):
+  - Bug C fix: complete() ahora retorna Tuple[str, int, str]:
+    (texto, tokens, provider_used). El tercer valor es el provider
+    REAL que respondió (puede ser el fallback, no el primario).
+    BaseAgent.llm() usa este valor para calcular costos correctamente.
+
 Estrategia de providers (en orden de prioridad):
   1. Ollama local     → gratis, offline, 0 latencia de red
-                        (Athlon 3000G: qwen2.5-coder:7b-q4_k_m ~4-7 tok/s)
-  2. Groq             → gratis (14,400 tok/min), ultra rápido para tareas complejas
+  2. Groq             → gratis (14,400 tok/min), ultra rápido
   3. Gemini Flash     → gratis (1M tok/día), fallback fiable
   4. Hyperspace       → fallback legacy local
-
-Cambios v2.2.0:
-  - Exponential backoff en _fallback_chain (fix rate-limit cascading)
-  - _estimate_tokens mejorado: factor 1.6 para código vs 1.3 para texto
-  - CLOUD_CONTEXT_LIMITS con valores reales (Gemini/Claude 1M)
-  - thinking=True en tareas REASONING via /think tag (qwen local)
 """
 from __future__ import annotations
 import asyncio
@@ -36,31 +35,25 @@ COST_PER_1K: Dict[str, float] = {
 # Límites reales de contexto por provider (tokens)
 # ---------------------------------------------------------------------------
 CLOUD_CONTEXT_LIMITS: Dict[str, int] = {
-    "ollama":     32_768,      # qwen2.5-coder:7b-q4_K_M
-    "groq":       131_072,     # llama-3.3-70b
-    "gemini":   1_000_000,     # gemini-2.0-flash
-    "hyperspace":  8_192,      # legacy
+    "ollama":       32_768,
+    "groq":        131_072,
+    "gemini":    1_000_000,
+    "hyperspace":    8_192,
 }
 
-# ---------------------------------------------------------------------------
-# Límites de los tiers gratuitos
-# ---------------------------------------------------------------------------
 FREE_TIER_LIMITS = {
     "groq":   {"tokens_per_minute": 14_400, "requests_per_minute": 30},
     "gemini": {"tokens_per_day": 1_000_000, "requests_per_minute": 15},
 }
 
-# ---------------------------------------------------------------------------
-# Perfiles de modelo por hardware
-# ---------------------------------------------------------------------------
 OLLAMA_PROFILES = {
-    "cpu_8gb":  {"model": "llama3.2:3b-q4_K_M",          "gpu_layers": 0,  "context": 8_192},
-    "cpu_16gb": {"model": "qwen2.5-coder:7b-q4_K_M",     "gpu_layers": 0,  "context": 32_768},
-    "cpu_24gb": {"model": "qwen2.5-coder:7b-q4_K_M",     "gpu_layers": 4,  "context": 32_768},
-    "gpu_8gb":  {"model": "deepseek-coder-v2:16b-q4_K_M", "gpu_layers": 33, "context": 65_536},
-    "gpu_12gb": {"model": "qwen2.5-coder:14b-q4_K_M",     "gpu_layers": 43, "context": 65_536},
-    "gpu_16gb": {"model": "qwen2.5-coder:14b-q4_K_M",     "gpu_layers": 43, "context": 128_000},
-    "gpu_24gb": {"model": "qwen2.5-coder:32b-q4_K_M",     "gpu_layers": 65, "context": 128_000},
+    "cpu_8gb":  {"model": "llama3.2:3b-q4_K_M",           "gpu_layers": 0,  "context": 8_192},
+    "cpu_16gb": {"model": "qwen2.5-coder:7b-q4_K_M",      "gpu_layers": 0,  "context": 32_768},
+    "cpu_24gb": {"model": "qwen2.5-coder:7b-q4_K_M",      "gpu_layers": 4,  "context": 32_768},
+    "gpu_8gb":  {"model": "deepseek-coder-v2:16b-q4_K_M",  "gpu_layers": 33, "context": 65_536},
+    "gpu_12gb": {"model": "qwen2.5-coder:14b-q4_K_M",      "gpu_layers": 43, "context": 65_536},
+    "gpu_16gb": {"model": "qwen2.5-coder:14b-q4_K_M",      "gpu_layers": 43, "context": 128_000},
+    "gpu_24gb": {"model": "qwen2.5-coder:32b-q4_K_M",      "gpu_layers": 65, "context": 128_000},
 }
 
 
@@ -68,13 +61,11 @@ class APIRouter:
     """
     Router inteligente de APIs LLM con estrategia local-first.
 
-    Flujo de decisión:
-      1. Si Ollama activo y tarea cabe en contexto → Ollama local
-      2. Si tarea compleja O excede contexto local → Groq (gratis, rápido)
-      3. Si Groq no disponible → Gemini Flash (gratis, 1M ctx)
-      4. Fallback final → Hyperspace legacy
+    complete() retorna Tuple[str, int, str]:
+      (texto_generado, tokens_usados, provider_usado)
 
-    complete() retorna Tuple[str, int]: (texto_generado, tokens_usados)
+    El tercer elemento es el provider REAL que respondió — puede ser
+    diferente al primario si hubo fallback.
     """
 
     CLOUD_PREFERRED_TASKS = {
@@ -87,16 +78,14 @@ class APIRouter:
         "review", "content", "office", "qa", "pm",
         "trading", "analytics", "marketing", "product", "design",
     }
-
-    # Tareas donde activar chain-of-thought (/think tag en qwen)
     REASONING_TASKS = {
         "classification", "planning", "security_audit",
         "research", "analysis", "reasoning",
     }
 
     def __init__(self):
-        self.groq_key    = os.getenv("GROQ_API_KEY", "")
-        self.gemini_key  = os.getenv("GEMINI_API_KEY", "")
+        self.groq_key   = os.getenv("GROQ_API_KEY", "")
+        self.gemini_key = os.getenv("GEMINI_API_KEY", "")
 
         self.ollama_url     = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         self.ollama_enabled = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
@@ -132,7 +121,6 @@ class APIRouter:
         if self._strategy == "cloud_only":
             return "groq" if self.groq_key else "gemini"
 
-        # Estrategia local_first (default)
         if self.ollama_enabled:
             if task_type in self.CLOUD_PREFERRED_TASKS and (self.groq_key or self.gemini_key):
                 return "groq" if self.groq_key else "gemini"
@@ -141,11 +129,10 @@ class APIRouter:
                     f"APIRouter: {estimated_tokens} tokens > 85% ctx local "
                     f"({self.ollama_context}) → escalando a cloud"
                 )
-                # Elegir provider cloud con contexto suficiente
                 if estimated_tokens <= CLOUD_CONTEXT_LIMITS.get("groq", 0) and self.groq_key:
                     return "groq"
                 if self.gemini_key:
-                    return "gemini"  # 1M tokens, siempre cabe
+                    return "gemini"
             return "ollama"
 
         if self.groq_key:
@@ -155,7 +142,7 @@ class APIRouter:
         return "hyperspace"
 
     # ------------------------------------------------------------------
-    # Punto de entrada principal
+    # Punto de entrada principal — retorna (text, tokens, provider_used)
     # ------------------------------------------------------------------
 
     async def complete(
@@ -165,21 +152,23 @@ class APIRouter:
         system: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-    ) -> Tuple[str, int]:
+    ) -> Tuple[str, int, str]:
         """
         Genera completación con el provider óptimo.
-        Fallback automático con exponential backoff si el primario falla.
-        Retorna (texto_generado, tokens_usados).
+
+        Retorna (texto_generado, tokens_usados, provider_usado).
+        El tercer elemento es el provider REAL post-fallback (Bug C fix).
         """
         estimated = self._estimate_tokens(messages, "", system, task_type)
-        provider = self.select_provider(task_type, estimated)
+        provider  = self.select_provider(task_type, estimated)
         logger.info(
             f"APIRouter: task_type={task_type} → provider={provider} "
             f"(~{estimated} tokens estimados)"
         )
 
         try:
-            return await self._call(provider, messages, system, temperature, max_tokens)
+            text, tokens = await self._call(provider, messages, system, temperature, max_tokens)
+            return text, tokens, provider
         except Exception as e:
             logger.warning(f"APIRouter: {provider} falló ({e}), iniciando fallback chain...")
             return await self._fallback_chain(
@@ -187,7 +176,7 @@ class APIRouter:
             )
 
     # ------------------------------------------------------------------
-    # Llamadas por provider
+    # Llamadas por provider — retornan (text, tokens)
     # ------------------------------------------------------------------
 
     async def _call(
@@ -202,10 +191,7 @@ class APIRouter:
         else:
             return await self._call_hyperspace(messages, system, temperature, max_tokens)
 
-    async def _call_ollama(
-        self, messages, system, temperature, max_tokens
-    ) -> Tuple[str, int]:
-        """Llama a Ollama local vía OpenAI-compatible API."""
+    async def _call_ollama(self, messages, system, temperature, max_tokens) -> Tuple[str, int]:
         from openai import OpenAI
         client = OpenAI(base_url=self.ollama_url, api_key="ollama")
 
@@ -216,56 +202,49 @@ class APIRouter:
 
         options = {"num_gpu": self.ollama_layers} if self.ollama_layers > 0 else {}
 
-        def _sync_call():
-            return client.chat.completions.create(
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
                 model=self.ollama_model,
                 messages=full_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 extra_body={"options": options} if options else {},
-            )
-
-        loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(None, _sync_call)
+            ),
+        )
 
         text = response.choices[0].message.content or ""
-        # Limpiar bloques <think>...</think> expuestos por modelos qwen
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-
         try:
             tokens = response.usage.total_tokens
         except Exception:
             tokens = self._estimate_tokens(messages, text, system)
         return text, tokens
 
-    async def _call_groq(
-        self, messages, system, temperature, max_tokens
-    ) -> Tuple[str, int]:
+    async def _call_groq(self, messages, system, temperature, max_tokens) -> Tuple[str, int]:
         from .groq_client import GroqClient
         client = GroqClient()
-        text = await client.complete(
+        text   = await client.complete(
             messages, system=system, temperature=temperature, max_tokens=max_tokens
         )
         tokens = self._estimate_tokens(messages, text, system)
         return text, tokens
 
-    async def _call_gemini(
-        self, messages, system, temperature, max_tokens
-    ) -> Tuple[str, int]:
+    async def _call_gemini(self, messages, system, temperature, max_tokens) -> Tuple[str, int]:
         import google.generativeai as genai
         genai.configure(api_key=self.gemini_key)
         model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-        prompt = "\n".join([m["content"] for m in messages])
-
-        def _sync_call():
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system or "",
-            )
-            return model.generate_content(prompt)
+        prompt     = "\n".join([m["content"] for m in messages])
 
         loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(None, _sync_call)
+        response = await loop.run_in_executor(
+            None,
+            lambda: genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system or "",
+            ).generate_content(prompt),
+        )
         text = response.text
         try:
             tokens = (
@@ -276,9 +255,7 @@ class APIRouter:
             tokens = self._estimate_tokens(messages, text, system)
         return text, tokens
 
-    async def _call_hyperspace(
-        self, messages, system, temperature, max_tokens
-    ) -> Tuple[str, int]:
+    async def _call_hyperspace(self, messages, system, temperature, max_tokens) -> Tuple[str, int]:
         from openai import OpenAI
         client = OpenAI(base_url=self.hyperspace_url, api_key="none")
         full_messages = []
@@ -286,16 +263,16 @@ class APIRouter:
             full_messages.append({"role": "system", "content": system})
         full_messages.extend(messages)
 
-        def _sync_call():
-            return client.chat.completions.create(
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: client.chat.completions.create(
                 model="local",
                 messages=full_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-            )
-
-        loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(None, _sync_call)
+            ),
+        )
         text = response.choices[0].message.content or ""
         try:
             tokens = response.usage.total_tokens
@@ -305,18 +282,17 @@ class APIRouter:
 
     # ------------------------------------------------------------------
     # Fallback chain con exponential backoff
+    # Retorna (text, tokens, provider_usado) para Bug C fix
     # ------------------------------------------------------------------
 
     async def _fallback_chain(
         self, messages, system, temperature, max_tokens, failed: str
-    ) -> Tuple[str, int]:
+    ) -> Tuple[str, int, str]:
         """
         Intenta providers en orden de prioridad con exponential backoff.
-
-        Backoff: 1s → 2s → 4s entre intentos.
-        Esto evita cascading failures cuando el error es rate-limit (429).
+        Retorna (text, tokens, provider_real) para trazabilidad de costos.
         """
-        priority = ["ollama", "groq", "gemini", "hyperspace"]
+        priority  = ["ollama", "groq", "gemini", "hyperspace"]
         available = {
             "ollama":     self.ollama_enabled,
             "groq":       bool(self.groq_key),
@@ -329,16 +305,15 @@ class APIRouter:
             if provider == failed or not available[provider]:
                 continue
 
-            # Backoff exponencial: 1s, 2s, 4s...
             if attempt > 0:
-                wait = 2 ** (attempt - 1)
-                logger.info(f"APIRouter fallback: esperando {wait}s antes de intentar {provider}")
+                wait = 2 ** (attempt - 1)  # 1s, 2s, 4s
+                logger.info(f"APIRouter fallback: esperando {wait}s antes de {provider}")
                 await asyncio.sleep(wait)
 
             try:
                 logger.info(f"APIRouter fallback [{attempt+1}] → {provider}")
-                result = await self._call(provider, messages, system, temperature, max_tokens)
-                return result
+                text, tokens = await self._call(provider, messages, system, temperature, max_tokens)
+                return text, tokens, provider  # provider REAL
             except Exception as e:
                 logger.warning(f"Fallback {provider} también falló: {e}")
                 attempt += 1
@@ -359,17 +334,8 @@ class APIRouter:
         system: Optional[str] = None,
         task_type: str = "coding",
     ) -> int:
-        """
-        Estimación de tokens mejorada.
-
-        Para código Python/JS (task_type='coding', 'qa', 'dev'):
-          factor = 1.6  → más tokens por palabra (keywords, símbolos, indentación)
-        Para texto natural:
-          factor = 1.3  → estimación estándar
-        """
         CODE_TASKS = {"coding", "qa", "dev", "review", "security_audit"}
-        factor = 1.6 if task_type in CODE_TASKS else 1.3
-
+        factor   = 1.6 if task_type in CODE_TASKS else 1.3
         all_text = " ".join(m.get("content", "") for m in messages)
         if system:
             all_text += " " + system
@@ -386,7 +352,7 @@ class APIRouter:
             "hw_profile":           self.hw_profile,
             "ollama_enabled":       self.ollama_enabled,
             "ollama_model":         self.ollama_model if self.ollama_enabled else None,
-            "ollama_url":           self.ollama_url if self.ollama_enabled else None,
+            "ollama_url":           self.ollama_url   if self.ollama_enabled else None,
             "gpu_layers":           self.ollama_layers,
             "context_size":         self.ollama_context,
             "groq_available":       bool(self.groq_key),
