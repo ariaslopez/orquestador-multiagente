@@ -1,15 +1,15 @@
 # ARCHITECTURE — CLAW Agent System
 
 > Mapa completo del sistema: 70 agentes del Agency Registry → 12 pipelines de CLAW.
-> Este documento es la fuente de verdad para el diseño de agentes y pipelines.
+> Este documento es la fuente de verdad para el diseño de agentes, pipelines y skills.
 
-**Versión:** 2.2.2 · **Última actualización:** Abril 8, 2026
+**Versión:** 2.3.0 · **Última actualización:** Abril 8, 2026
 
 ---
 
 ## Principio de diseño
 
-Los 70 agentes del Registry son **roles especializados**, no pipelines independientes. Cada pipeline de CLAW es un flujo de trabajo donde N agentes colaboran en secuencia o en paralelo, compartiendo un `AgentContext` tipado. El `MCPHub` expone 13 herramientas externas que cualquier agente puede invocar a través del contexto mediante `ctx.mcp_call()`.
+Los 70 agentes del Registry son **roles especializados**, no pipelines independientes. Cada pipeline de CLAW es un flujo de trabajo donde N agentes colaboran en secuencia o en paralelo, compartiendo un `AgentContext` tipado. El `MCPHub` expone 13 herramientas externas que cualquier agente puede invocar a través del contexto mediante `ctx.mcp_call()`. El sistema de **skills** (Fase 17-A) añade una capa declarativa de recetas reutilizables por pipeline, sin modificar el código Python existente.
 
 ```
 AGENT_REGISTRY (70 roles)
@@ -24,6 +24,10 @@ AGENT_REGISTRY (70 roles)
     ┌────┴──────────┐
     │  AgentContext  │ ← estado compartido + MCPHub (13 tools) + ctx.mcp_call()
     └───────────────┘
+         │
+    ┌───┴──────┐
+    │ skills/*.md │ ← recetas declarativas por pipeline (Fase 17-A, pendiente)
+    └──────────┘
 ```
 
 ---
@@ -32,14 +36,14 @@ AGENT_REGISTRY (70 roles)
 
 | Pipeline | Agentes | Estado real | Notas |
 |---|---|---|---|
-| DEV | 6 en directorio | ✅ Sub-agentes reales | PlannerAgent usa sequential_thinking vía ctx.mcp_call() |
+| DEV | 6 en directorio | ✅ Sub-agentes reales | PlannerAgent usa sequential_thinking; CoderAgent usa context7 + github_mcp (v2.3.0) |
 | RESEARCH | 4 en directorio | ✅ Sub-agentes reales (v2) | WebScoutAgent usa brave_search + fallback DuckDuckGo |
 | CONTENT | 5 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
 | QA | 5 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
 | PM | 4 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
 | OFFICE | 3 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
-| TRADING | 4 en directorio | ✅ Estructura creada | DataAgent real con coingecko + okx + supabase_mcp |
-| ANALYTICS | 3 en directorio | ✅ Estructura creada | ReportDistributor pendiente slack MCP (Fase 13) |
+| TRADING | 4+1 en directorio | ✅ Estructura creada | DataAgent real con coingecko + okx + supabase_mcp (v2.3.0) |
+| ANALYTICS | 3 en directorio | ✅ Estructura creada | ReportDistributorAgent real con supabase_mcp + slack (v2.3.0) |
 | MARKETING | 4 en directorio | ✅ Estructura creada | Verificar implementación |
 | PRODUCT | 4 en directorio | ✅ Estructura creada | Verificar implementación |
 | SECURITY_AUDIT | 3 en directorio | ✅ Estructura creada | Verificar implementación |
@@ -69,13 +73,19 @@ thinking¹        con ctx7²
 ```
 
 ¹ `sequential_thinking` conectado en v2.2.2 vía `ctx.mcp_call("sequential_thinking", ...)`
-² `context7` pendiente de conectar (Fase 13 — CoderAgent)
+² `context7` + `github_mcp` conectados en v2.3.0 (CoderAgent real)
 
-**MCPs objetivo por agente:**
-- `PlannerAgent` → `sequential_thinking` + `mcp_memory` ✅ conectado
-- `CoderAgent` → `context7` + `github_mcp` 🔴 pendiente (Fase 13)
+**MCPs activos por agente:**
+- `PlannerAgent` → `sequential_thinking` + `mcp_memory` ✅ v2.2.2
+- `CoderAgent` → `context7` + `github_mcp` ✅ v2.3.0
 - `SecurityAgent` → `semgrep`
 - `GitAgent` → `github_mcp`
+
+**Skills planificadas (Fase 17-A):**
+- `implement_feature` — feature completa end-to-end (plan → código → review → PR)
+- `code_review` — revisión con criterios definidos y output estructurado
+- `write_tests` — suite de tests para un módulo dado
+- `refactor_module` — refactor sin romper comportamiento observable
 
 **Agentes del Registry mapeados:**
 - `engineering-backend-architect` → PlannerAgent
@@ -109,6 +119,11 @@ thinking¹        con ctx7²
 
 **Ejecución:** `parallel_then_sequential`
 
+**Skills planificadas (Fase 17-A):**
+- `web_research` — investigación web multi-fuente con síntesis estructurada
+- `competitor_analysis` — análisis de competidores con múltiples fuentes
+- `summarize_sources` — resumir N fuentes en un documento estructurado
+
 ---
 
 ## TRADING pipeline
@@ -122,7 +137,11 @@ BacktestReader → MetricsCalculator → RiskAnalyzer → StrategyAdvisor
 ```
 
 **MCPs activos:**
-- `DataAgent` / `BacktestReader` → `coingecko` + `okx` + `supabase_mcp` ✅ conectado (v2.2.2)
+- `DataAgent` / `BacktestReader` → `coingecko` + `okx` + `supabase_mcp` ✅ v2.2.2
+
+**Nota sobre skills:** TRADING está excluido del v1 del skills system (Fase 17-A).
+El pipeline funciona con sus agentes actuales. Se incorporará al sistema de skills
+en v2 de la Fase 17-A, después de validar el esquema con los 11 pipelines restantes.
 
 ---
 
@@ -133,10 +152,16 @@ BacktestReader → MetricsCalculator → RiskAnalyzer → StrategyAdvisor
 ```
 DataCollector → InsightGenerator → ReportDistributor
  consolida        insights de        formatea y
- fuentes          negocio            distribuye vía Slack¹
+ fuentes          negocio            distribuye vía Slack ✅ v2.3.0
 ```
 
-¹ `ReportDistributorAgent` pendiente conectar `slack` MCP (Fase 13)
+**MCPs activos:**
+- `ReportDistributor` → `supabase_mcp` + `slack` ✅ v2.3.0
+
+**Skills planificadas (Fase 17-A):**
+- `kpi_report` — reporte semanal/mensual de KPIs con tendencias
+- `funnel_analysis` — análisis de embudo de conversión
+- `cohort_analysis` — análisis de retención por cohortes
 
 ---
 
@@ -147,6 +172,11 @@ DataCollector → InsightGenerator → ReportDistributor
 ```
 TopicAgent → WriterAgent → EditorAgent → BrandAgent → SchedulerAgent
 ```
+
+**Skills planificadas (Fase 17-A):**
+- `longform_to_social` — convertir contenido largo a posts por red social
+- `newsletter_issue` — generar un número completo de newsletter
+- `landing_copy` — copy de landing page con estructura AIDA
 
 ---
 
@@ -162,6 +192,11 @@ StaticAnalyzer → BugHunter → SecurityReviewer → PerformanceProfiler → Te
 - `SecurityReviewer` → `semgrep` + `deepwiki`
 - `TestGenerator` → `playwright`
 
+**Skills planificadas (Fase 17-A):**
+- `static_audit` — auditoría estática con semgrep + checklist OWASP
+- `test_plan` — plan de pruebas para un módulo o feature
+- `regression_suite` — suite de regresión con playwright
+
 ---
 
 ## PM pipeline
@@ -171,6 +206,11 @@ StaticAnalyzer → BugHunter → SecurityReviewer → PerformanceProfiler → Te
 ```
 RequirementsParser → BacklogBuilder → SprintPlanner → RoadmapGenerator
 ```
+
+**Skills planificadas (Fase 17-A):**
+- `roadmap_from_ideas` — convertir lista de ideas en roadmap priorizado
+- `sprint_planning` — planning de sprint con estimaciones y dependencias
+- `backlog_grooming` — grooming con criterios de aceptación
 
 ---
 
@@ -182,6 +222,11 @@ RequirementsParser → BacklogBuilder → SprintPlanner → RoadmapGenerator
 FileReader → DataAnalyzer → ReportWriter
 ```
 
+**Skills planificadas (Fase 17-A):**
+- `meeting_notes` — procesar grabación/texto → acta + acciones
+- `task_extraction` — extraer tareas y owners de documentos
+- `email_reply` — redactar respuestas de email en tono definido
+
 ---
 
 ## MARKETING pipeline
@@ -192,6 +237,12 @@ FileReader → DataAnalyzer → ReportWriter
 StrategyAgent → CopyAgent → GrowthAgent → AnalyticsAgent
 ```
 
+**Skills planificadas (Fase 17-A):**
+- `campaign_brief` — brief completo de campaña: objetivo, audiencia, canales
+- `audience_persona` — definición de persona con demographics + psicographics
+- `multi_channel_post` — post optimizado por canal (X, LinkedIn, Instagram, YT, email)
+- `content_calendar` — calendario editorial mensual con temas y formatos
+
 ---
 
 ## PRODUCT pipeline
@@ -201,6 +252,11 @@ StrategyAgent → CopyAgent → GrowthAgent → AnalyticsAgent
 ```
 MarketResearcher → FeedbackSynthesizer → FeaturePrioritizer → NudgeDesigner
 ```
+
+**Skills planificadas (Fase 17-A):**
+- `problem_interview` — guía de entrevista de problema + análisis de respuestas
+- `feature_brief` — brief de feature: problema, solución, métricas de éxito
+- `prioritization_rice` — priorización RICE de backlog con justificación
 
 ---
 
@@ -216,6 +272,11 @@ ThreatModeler → CodeReviewer → ComplianceChecker
 - `ThreatModeler` → `semgrep`
 - `CodeReviewer` → `deepwiki` + `semgrep`
 
+**Skills planificadas (Fase 17-A):**
+- `threat_model` — modelo de amenazas STRIDE para un sistema dado
+- `code_security_review` — revisión de seguridad con semgrep + OWASP Top 10
+- `compliance_gap` — gap analysis GDPR/CCPA/SOC2
+
 ---
 
 ## DESIGN pipeline
@@ -225,6 +286,11 @@ ThreatModeler → CodeReviewer → ComplianceChecker
 ```
 UIAgent → UXAgent → BrandAgent → A11yAgent → PromptEngineer
 ```
+
+**Skills planificadas (Fase 17-A):**
+- `ui_review` — revisión de UI contra principios de usabilidad
+- `ux_audit` — auditoría UX con heurísticas de Nielsen
+- `brand_system` — definición de sistema de marca: colores, tipografía, voz
 
 ---
 
@@ -236,16 +302,107 @@ MCP                  → Agentes que lo usan
 mcp_memory           → TODOS (BaseAgent hooks _before_run/_after_run) ✅ v2.2.2
 sequential_thinking  → PlannerAgent, Maestro ✅ v2.2.2
 brave_search         → WebScoutAgent ✅ v2.2.2
-context7             → CoderAgent 🔴 Fase 13
+context7             → CoderAgent ✅ v2.3.0
 deepwiki             → CoderAgent, SecurityReviewer
-supabase_mcp         → DataAgent, ReportDistributor, DataCollector ✅ v2.2.2
+supabase_mcp         → DataAgent, ReportDistributor, DataCollector ✅ v2.3.0
 coingecko            → DataAgent, BacktestReader ✅ v2.2.2
 okx                  → DataAgent, BacktestReader
-github_mcp           → CoderAgent, GitAgent
+github_mcp           → CoderAgent ✅ v2.3.0, GitAgent
 semgrep              → SecurityAgent, ThreatModeler, CodeReviewer
 playwright           → TestGenerator
-slack                → ReportDistributor 🔴 Fase 13
+slack                → ReportDistributor ✅ v2.3.0
 n8n                  → Cualquier agente de automatización
+```
+
+---
+
+## Sistema de Skills y `claude.md` por pipeline
+
+> **Estado:** Diseñado en ROADMAP (Fase 17-A). Pendiente implementación.
+> Los archivos `skills/` no existen aún en el repo; este apartado es el contrato de diseño.
+
+### Por qué existe este sistema
+
+Los agentes saben **cómo** ejecutar una tarea (Python, MCPs, prompts). Las skills definen
+**qué** flujo seguir para resolver tipos de tareas recurrentes. Son archivos `.md` legilbes
+por humanos y por el orquestador, sin requerir cambios en el código Python existente.
+
+### Estructura de `skills/`
+
+```text
+skills/
+  shared/
+    schema.md          # Formato canónico de una skill (campos obligatorios + ejemplos)
+    safety_guards.md   # Reglas globales: no credenciales, no push sin confirmar, etc.
+
+  <pipeline>/
+    claude.md          # Orquestador conceptual del pipeline
+    skills/
+      <nombre>.md      # Una skill = un flujo reutilizable
+```
+
+### Pipelines con skills planificadas (v1)
+
+| Pipeline | claude.md | Skills planificadas (mínimo) |
+|---|---|---|
+| DEV | ⏳ pendiente | implement_feature, code_review, write_tests, refactor_module |
+| RESEARCH | ⏳ pendiente | web_research, competitor_analysis, summarize_sources |
+| CONTENT | ⏳ pendiente | longform_to_social, newsletter_issue, landing_copy |
+| OFFICE | ⏳ pendiente | meeting_notes, task_extraction, email_reply |
+| QA | ⏳ pendiente | static_audit, test_plan, regression_suite |
+| PM | ⏳ pendiente | roadmap_from_ideas, sprint_planning, backlog_grooming |
+| ANALYTICS | ⏳ pendiente | kpi_report, funnel_analysis, cohort_analysis |
+| MARKETING | ⏳ pendiente | campaign_brief, audience_persona, multi_channel_post, content_calendar |
+| PRODUCT | ⏳ pendiente | problem_interview, feature_brief, prioritization_rice |
+| SECURITY_AUDIT | ⏳ pendiente | threat_model, code_security_review, compliance_gap |
+| DESIGN | ⏳ pendiente | ui_review, ux_audit, brand_system |
+| TRADING | ❌ excluido v1 | Se incorpora en v2 de Fase 17-A tras validar el esquema |
+
+### Qué define cada `claude.md`
+
+Cada `skills/<pipeline>/claude.md` especifica:
+- **Rol del pipeline:** qué problema resuelve y en qué contextos se activa.
+- **Agentes disponibles:** lista de `agents/<pipeline>/*` con descripción de cada uno.
+- **Skills autorizadas:** lista de skills disponibles para el pipeline.
+- **MCPs permitidos:** whitelist sobre los 13 MCPs disponibles.
+- **Restricciones de seguridad:** reglas específicas (ej. PM/Marketing no ejecutan código,
+  DEV no hace push a main sin confirmación explcita).
+- **Política de calidad:** criterios de "done" para el pipeline.
+
+### Qué define cada skill `.md`
+
+Campos canónicos (definidos en `skills/shared/schema.md`):
+
+| Campo | Descripción | Obligatorio |
+|---|---|---|
+| `name` | Identificador snake_case | Sí |
+| `pipeline` | Pipeline dueño de la skill | Sí |
+| `version` | Semver de la skill | Sí |
+| `description` | Qué resuelve y qué entrega | Sí |
+| `required_inputs` | Inputs que el usuario debe proveer | Sí |
+| `optional_inputs` | Inputs opcionales con defaults | No |
+| `agents_involved` | Agentes participantes y su rol | Sí |
+| `tools` | MCPs necesarios | Sí |
+| `steps` | Pasos de alto nivel | Sí |
+| `output_format` | Estructura esperada del output | Sí |
+| `quality_criteria` | Criterios verificables de done | Sí |
+| `failure_modes` | Modos de fallo + respuesta | No |
+| `examples` | Ejemplos de input/output | Recomendado |
+
+### Integración con Maestro (Fase 17-A, paso 5)
+
+Cuando el skills system esté implementado, Maestro cargará el `claude.md` del
+pipeline seleccionado y buscará la skill más afin a la tarea del usuario.
+El proceso es solo lectura de archivos `.md`; no hay cambios en `PipelineRouter`
+ni en los agentes Python existentes.
+
+```
+Maestro.classify(task)
+  → pipeline seleccionado
+  → carga skills/<pipeline>/claude.md
+  → busca skill más afin por keywords/embeddings
+  → inyecta skill en AgentContext como "guia de ejecución"
+  → ejecuta pipeline normal (PipelineRouter sin cambios)
 ```
 
 ---
@@ -275,26 +432,20 @@ class NombreAgent(BaseAgent):
 ### Llamar un MCP desde un agente
 
 ```python
-# Ejemplo: WebScoutAgent usando brave_search
-result = await context.mcp_call(
-    "brave_search",
-    "search",
-    {"query": "Bitcoin price analysis 2026", "count": 10}
-)
-
-# Ejemplo: PlannerAgent usando sequential_thinking
-plan = await context.mcp_call(
-    "sequential_thinking",
-    "decompose",
-    {"problem": context.task, "steps": 5}
-)
-
 # Verificar disponibilidad antes de llamar
 if context.is_mcp_available("brave_search"):
-    result = await context.mcp_call("brave_search", "search", {...})
+    result = await context.mcp_call(
+        "brave_search", "search",
+        {"query": "Bitcoin price analysis 2026", "count": 10}
+    )
 else:
-    # fallback a DuckDuckGo
-    result = await tools.web_search(query)
+    result = await tools.web_search(query)  # fallback
+
+# PlannerAgent usando sequential_thinking
+plan = await context.mcp_call(
+    "sequential_thinking", "decompose",
+    {"problem": context.task, "steps": 5}
+)
 ```
 
 ### Registrar un pipeline nuevo
@@ -304,7 +455,8 @@ else:
 3. Añadir builder en `core/maestro.py` → método `_build_<pipeline>_pipeline()`
 4. Añadir keywords en `core/maestro.py` → `_classify_task()`
 5. Crear ejemplo en `examples/<pipeline>_example.py`
-6. Actualizar `ROADMAP.md` con ítems completados
+6. Crear `skills/<pipeline>/claude.md` con agentes, skills y MCPs del pipeline
+7. Actualizar `ROADMAP.md` con ítems completados
 
 ### Patrones de ejecución
 
