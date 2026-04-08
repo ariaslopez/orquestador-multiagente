@@ -1,17 +1,13 @@
-"""
-trading_agent.py — Redirector de compatibilidad (v2.2.2)
+"""ELIMINADO en PR-2 (refactor/pr2-cleanup-stubs-migrate-v1-agents).
 
-Importa directamente desde el sub-pipeline agents/trading/.
-Este módulo NO debe usarse en código nuevo.
-"""
-from agents.trading.backtest_reader import BacktestReaderAgent      # noqa: F401
-from agents.trading.metrics_calculator import MetricsCalculatorAgent # noqa: F401
-from agents.trading.risk_analyzer import RiskAnalyzerAgent           # noqa: F401
-from agents.trading.strategy_advisor import StrategyAdvisorAgent     # noqa: F401
+Este módulo era un redirector de compatibilidad.
+Importar directamente desde agents.trading.<agente>.
 
-__all__ = [
-    "BacktestReaderAgent",
-    "MetricsCalculatorAgent",
-    "RiskAnalyzerAgent",
-    "StrategyAdvisorAgent",
-]
+Ejemplo:
+    from agents.trading.data_agent import DataAgent
+    from agents.trading.backtest_reader import BacktestReaderAgent
+"""
+raise ImportError(
+    "agents.trading_agent fue eliminado en PR-2. "
+    "Importa desde agents.trading.<agente> directamente."
+)

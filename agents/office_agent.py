@@ -1,10 +1,11 @@
-"""
-office_agent.py — Redirector de compatibilidad (v2.2.2)
+"""ELIMINADO en PR-2 (refactor/pr2-cleanup-stubs-migrate-v1-agents).
 
-Importa directamente desde el sub-pipeline agents/office/.
-Este módulo NO debe usarse en código nuevo.
+Importar directamente desde agents.office.<agente>.
+
+Ejemplo:
+    from agents.office.file_reader import FileReaderAgent
 """
-try:
-    from agents.office import __all__ as _office_exports  # noqa: F401
-except ImportError:
-    pass  # sub-agentes aún en construcción — no rompe producción
+raise ImportError(
+    "agents.office_agent fue eliminado en PR-2. "
+    "Importa desde agents.office.<agente> directamente."
+)

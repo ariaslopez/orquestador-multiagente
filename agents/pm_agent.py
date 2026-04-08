@@ -1,10 +1,11 @@
-"""
-pm_agent.py — Redirector de compatibilidad (v2.2.2)
+"""ELIMINADO en PR-2 (refactor/pr2-cleanup-stubs-migrate-v1-agents).
 
-Importa directamente desde el sub-pipeline agents/pm/.
-Este módulo NO debe usarse en código nuevo.
+Importar directamente desde agents.pm.<agente>.
+
+Ejemplo:
+    from agents.pm.backlog_builder import BacklogBuilderAgent
 """
-try:
-    from agents.pm import __all__ as _pm_exports  # noqa: F401
-except ImportError:
-    pass  # sub-agentes aún en construcción — no rompe producción
+raise ImportError(
+    "agents.pm_agent fue eliminado en PR-2. "
+    "Importa desde agents.pm.<agente> directamente."
+)
