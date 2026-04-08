@@ -1,9 +1,10 @@
-"""
-doc_agent.py — Redirector de compatibilidad (v2.2.2)
+"""ELIMINADO en PR-2 (refactor/pr2-cleanup-stubs-migrate-v1-agents).
 
-Importa directamente desde el sub-pipeline correspondiente.
-Este módulo NO debe usarse en código nuevo.
+No existe pipeline 'doc' en el sistema CLAW v2.x.
+Si necesitas generar documentación, usa el pipeline DEV con
+la tarea explícita: 'genera documentación para <repo>'.
 """
-# doc_agent no tiene sub-pipeline dedicado todavía.
-# Placeholder seguro para imports legacy.
-DocAgent = None  # será reemplazado cuando se implemente agents/doc/ en Fase 13
+raise ImportError(
+    "agents.doc_agent fue eliminado en PR-2. "
+    "No hay pipeline 'doc'. Usa pipeline DEV con tarea de documentación."
+)
