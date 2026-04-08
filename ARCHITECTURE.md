@@ -1,17 +1,15 @@
 # ARCHITECTURE — CLAW Agent System
 
 > Mapa completo del sistema: 70 agentes del Agency Registry → 12 pipelines de CLAW.
-> Este documento es la fuente de verdad para el diseño de las Fases 8–12.
+> Este documento es la fuente de verdad para el diseño de agentes y pipelines.
 
-**Versión:** 1.0.0 · **Última actualización:** Abril 2026
+**Versión:** 2.1.0 · **Última actualización:** Abril 7, 2026
 
 ---
 
 ## Principio de diseño
 
-Los 70 agentes del `AGENT_REGISTRY.md` son **roles especializados**, no pipelines independientes.
-Cada pipeline de CLAW es un flujo de trabajo con N agentes colaborando en secuencia o en paralelo.
-El resultado es **12 pipelines** que cubren los 70 roles del Registry.
+Los 70 agentes del Registry son **roles especializados**, no pipelines independientes. Cada pipeline de CLAW es un flujo de trabajo donde N agentes colaboran en secuencia o en paralelo, compartiendo un `AgentContext` tipado. El `MCPHub` expone 13 herramientas externas que cualquier agente puede invocar a través del contexto.
 
 ```
 AGENT_REGISTRY (70 roles)
@@ -20,361 +18,234 @@ AGENT_REGISTRY (70 roles)
   12 pipelines CLAW
          │
     ┌────┴────┐
-    │ Maestro │  ← Clasifica tarea → pipeline correcto
-    └─────────┘
+    │ Maestro │  ← clasifica tarea → pipeline correcto
+    └────┬────┘
+         │
+    ┌────┴──────────┐
+    │  AgentContext  │ ← estado compartido + MCPHub (13 tools)
+    └───────────────┘
 ```
 
 ---
 
-## Estado de implementación
+## Estado real de implementación
 
-| Pipeline | Agentes | Estado | Fase |
-|----------|---------|--------|------|
-| DEV | 6 reales | ✅ Sub-pipeline completo | v1.0.0 |
-| RESEARCH | 4 reales (2‖ + 2→) | ✅ Sub-pipeline completo | v1.0.0 |
-| CONTENT | 1 macro | ⚠️ Expandir | Fase 8 |
-| QA | 1 macro | ⚠️ Expandir | Fase 8 |
-| PM | 1 macro | ⚠️ Expandir | Fase 8 |
-| OFFICE | 1 macro | ⚠️ Expandir | Fase 8 |
-| TRADING | 1 macro | ⚠️ Expandir | Fase 8 |
-| DESIGN | — | 🔴 Nuevo | Fase 9 |
-| MARKETING | — | 🔴 Nuevo | Fase 9 |
-| ANALYTICS | — | 🔴 Nuevo | Fase 9 |
-| PRODUCT | — | 🔴 Nuevo | Fase 9 |
-| SECURITY_AUDIT | — | 🔴 Nuevo | Fase 9 |
+| Pipeline | Agentes | Estado real | Notas |
+|---|---|---|---|
+| DEV | 6 en directorio | ✅ Sub-agentes reales | PlannerAgent sin sequential_thinking aún |
+| RESEARCH | 4 en directorio | ✅ Sub-agentes reales | WebScout usa DuckDuckGo, pendiente brave_search |
+| CONTENT | 5 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
+| QA | 5 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
+| PM | 4 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
+| OFFICE | 3 en directorio | ✅ Estructura creada | Verificar implementación de cada agente |
+| TRADING | 4 en directorio | ✅ Estructura creada | DataAgent pendiente coingecko + okx |
+| ANALYTICS | 3 en directorio | ✅ Estructura creada | ReportDistributor pendiente slack |
+| MARKETING | 4 en directorio | ✅ Estructura creada | Verificar implementación |
+| PRODUCT | 4 en directorio | ✅ Estructura creada | Verificar implementación |
+| SECURITY_AUDIT | 3 en directorio | ✅ Estructura creada | Verificar implementación |
+| DESIGN | 5 en directorio | ✅ Estructura creada | Verificar implementación |
 
-> **Nota:** 6 agentes de Spatial Computing (XR/VisionOS) están registrados pero fuera de scope del roadmap activo.
+> **Nota:** "Estructura creada" significa que los archivos existen y heredan de BaseAgent.
+> La calidad real de cada `run()` debe verificarse pipeline por pipeline.
+
+> **Stubs redundantes en raíz:** Existen `agents/trading_agent.py`, `agents/qa_agent.py`,
+> `agents/content_agent.py`, `agents/pm_agent.py`, `agents/office_agent.py` como archivos
+> sueltos (~800-900 bytes cada uno). Son de una versión anterior y deben eliminarse.
+> Ver `ROADMAP.md → Fase 12 - Paso 2`.
 
 ---
 
-## Pipelines existentes (v1.0.0)
-
-### DEV pipeline
+## DEV pipeline
 
 **Trigger keywords:** `crea`, `genera`, `construye`, `proyecto`, `api`, `app`, `código`, `refactor`
 
 ```
 PlannerAgent → CoderAgent → ReviewerAgent → SecurityAgent → ExecutorAgent → GitAgent
     │               │             │               │               │             │
-  plan de        genera         revisa          valida          escribe       hook
-  archivos       código         y corrige       seguridad       en disco      Git
-  y stack        por archivo
+  plan +          genera        revisa y        valida          ejecuta       commit
+sequential_      código        corrige         seguridad        en disco      + PR
+thinking¹        con ctx7²
 ```
 
+¹ `sequential_thinking` pendiente de conectar (Fase 12 - Paso 5)
+² `context7` pendiente de conectar (Fase 13)
+
+**MCPs objetivo por agente:**
+- `PlannerAgent` → `sequential_thinking` + `mcp_memory`
+- `CoderAgent` → `context7` + `github_mcp`
+- `SecurityAgent` → `semgrep`
+- `GitAgent` → `github_mcp`
+
 **Agentes del Registry mapeados:**
-- `engineering-senior-developer` → CoderAgent + ReviewerAgent
 - `engineering-backend-architect` → PlannerAgent
+- `engineering-senior-developer` → CoderAgent + ReviewerAgent
 - `engineering-security-engineer` → SecurityAgent
 - `engineering-devops-automator` → ExecutorAgent + GitAgent
-- `engineering-technical-writer` → (documentación en output del PlannerAgent)
-
-**Pendiente:** GitAgent es un stub. La integración real (branch → commit → PR) se implementa en Fase 12 usando `tools/git_ops.py`.
 
 ---
 
-### RESEARCH pipeline
+## RESEARCH pipeline
 
 **Trigger keywords:** `tesis`, `análisis`, `inversión`, `investigación`, `mercado`, `precio`, `token`
 
 ```
-             ┌─ WebScoutAgent ─┐
-             │  (búsqueda web) │
-             │                 ▼
-             │           AgentContext
-             │                 │
-             └─ DataAgent ─────┘
-               (datos mercado)  │
-                                ▼
-                          AnalystAgent
-                         (analiza todo)
-                                │
-                                ▼
-                          ThesisAgent
-                        (tesis final)
+         ┌─ WebScoutAgent ──┐
+         │  brave_search¹   │
+         │                  ▼
+         │           AgentContext
+         │                  │
+         └─ DataAgent ──────┘
+           coingecko + okx²  │
+                             ▼
+                       AnalystAgent
+                             │
+                             ▼
+                       ThesisAgent
 ```
 
-**Ejecución:** `parallel_then_sequential` — WebScout y DataAgent corren en paralelo, luego Analyst y Thesis en secuencia.
+¹ Actualmente usa DuckDuckGo; pendiente upgrade a `brave_search`
+² `coingecko` funciona sin API key; `okx` requiere `OKX_API_KEY`
 
-**Agentes del Registry mapeados:**
-- `product-trend-researcher` → WebScoutAgent
-- `data-analytics-reporter` + `data-consolidation-agent` → DataAgent
-- `engineering-ai-engineer` → AnalystAgent
-- `specialized-developer-advocate` → ThesisAgent (output estructurado)
+**Ejecución:** `parallel_then_sequential`
 
 ---
 
-## Expansión de pipelines macro (Fase 8)
+## TRADING pipeline
 
-### CONTENT pipeline (actual: 1 macro → futuro: 5 agentes)
-
-**Trigger keywords:** `contenido`, `tweet`, `hilo`, `post`, `newsletter`, `redacta`, `escribe`
-
-```
-TopicAgent → WriterAgent → EditorAgent → BrandAgent → SchedulerAgent
-  (tema)      (redacta)    (edita tono)  (verifica    (calendario
-                                          marca)       editorial)
-```
-
-**Archivos a crear:**
-```
-agents/content/
-├── topic_agent.py       # Selecciona tema según contexto de mercado
-├── writer_agent.py      # Redacta contenido con personalidad LLM
-├── editor_agent.py      # Edita tono, longitud, hashtags
-├── brand_agent.py       # Verifica coherencia de marca
-└── scheduler_agent.py   # Propone calendario editorial
-```
-
-**Agentes del Registry mapeados:**
-- `marketing-twitter-engager` → WriterAgent (personalidades + Twitter-first)
-- `marketing-content-creator` → WriterAgent + EditorAgent
-- `design-brand-guardian` → BrandAgent
-- `marketing-social-media-strategist` → SchedulerAgent
-- `design-visual-storyteller` → EditorAgent (narrativa)
-
----
-
-### QA pipeline (actual: 1 macro → futuro: 5 agentes)
-
-**Trigger keywords:** `audita`, `revisa`, `bugs`, `tests`, `calidad`, `vulnerabilidades`, `coverage`
-
-```
-StaticAnalyzer → BugHunter → SecurityReviewer → PerformanceProfiler → TestGenerator
-  (linting)      (lógica)     (OWASP Top 10)     (cuellos botella)     (genera tests)
-```
-
-**Archivos a crear:**
-```
-agents/qa/
-├── static_analyzer.py       # Linting, tipos, code smells
-├── bug_hunter.py            # Bugs lógicos y edge cases
-├── security_reviewer.py     # OWASP Top 10, secrets expuestos
-├── performance_profiler.py  # N+1 queries, loops costosos
-└── test_generator.py        # Genera tests unitarios faltantes
-```
-
-**Agentes del Registry mapeados:**
-- `testing-reality-checker` → BugHunter (default FAIL hasta evidencia)
-- `testing-api-tester` → StaticAnalyzer
-- `testing-evidence-collector` → SecurityReviewer
-- `testing-performance-benchmarker` → PerformanceProfiler
-- `testing-test-results-analyzer` → TestGenerator
-
----
-
-### PM pipeline (actual: 1 macro → futuro: 4 agentes)
-
-**Trigger keywords:** `roadmap`, `backlog`, `sprint`, `épicas`, `historias`, `planifica`, `milestones`
-
-```
-RequirementsParser → BacklogBuilder → SprintPlanner → RoadmapGenerator
-  (extrae          (épicas +         (RICE/MoSCoW    (fases +
-   requisitos)      historias)        priorización)   milestones)
-```
-
-**Archivos a crear:**
-```
-agents/pm/
-├── requirements_parser.py   # Extrae requisitos de descripción libre
-├── backlog_builder.py       # Crea backlog estructurado
-├── sprint_planner.py        # Priorización con RICE/MoSCoW
-└── roadmap_generator.py     # Genera roadmap con fases
-```
-
-**Agentes del Registry mapeados:**
-- `project-manager-senior` → RequirementsParser + RoadmapGenerator
-- `product-sprint-prioritizer` → SprintPlanner
-- `project-management-studio-producer` → BacklogBuilder
-- `project-management-experiment-tracker` → SprintPlanner (A/B hipótesis)
-
----
-
-### OFFICE pipeline (actual: 1 macro → futuro: 3 agentes)
-
-**Trigger keywords:** `excel`, `csv`, `pdf`, `word`, `archivo`, `analiza`, `extrae datos`
-
-```
-FileReader → DataAnalyzer → ReportWriter
- (extrae      (estadística   (reporte
-  datos)       básica)        estructurado)
-```
-
-**Archivos a crear:**
-```
-agents/office/
-├── file_reader.py     # Lectura y extracción (usa tools/office_reader.py)
-├── data_analyzer.py   # Análisis estadístico básico
-└── report_writer.py   # Genera reporte en Markdown/HTML
-```
-
-**Agentes del Registry mapeados:**
-- `data-consolidation-agent` → FileReader
-- `data-analytics-reporter` → DataAnalyzer
-- `support-executive-summary-generator` → ReportWriter
-
----
-
-### TRADING pipeline (actual: 1 macro → futuro: 4 agentes)
-
-**Trigger keywords:** `backtest`, `sharpe`, `drawdown`, `bot`, `estrategia`, `señales`, `trading`
+**Trigger keywords:** `backtest`, `sharpe`, `drawdown`, `bot`, `estrategia`, `señales`
 
 ```
 BacktestReader → MetricsCalculator → RiskAnalyzer → StrategyAdvisor
-  (parsea          (Sharpe, DD,        (exposición,    (recomenda-
-   resultados)      win rate)           concentración)  ciones)
+   parsea          Sharpe, DD,         exposición,    recomendaciones
+   resultados      win rate            concentración
 ```
 
-**Archivos a crear:**
-```
-agents/trading/
-├── backtest_reader.py       # Parsea output de backtests
-├── metrics_calculator.py    # Sharpe, drawdown, win rate, Calmar
-├── risk_analyzer.py         # Análisis de riesgo y exposición
-└── strategy_advisor.py      # Recomendaciones de mejora
-```
-
-**Agentes del Registry mapeados:**
-- `sales-data-extraction-agent` → BacktestReader (extracción de métricas)
-- `data-analytics-reporter` → MetricsCalculator
-- `engineering-autonomous-optimization-architect` → StrategyAdvisor
+**MCPs objetivo:**
+- `DataAgent` / `BacktestReader` → `coingecko` + `okx` + `supabase_mcp`
 
 ---
 
-## Pipelines nuevos (Fase 9)
+## ANALYTICS pipeline
 
-### DESIGN pipeline
-
-**Trigger keywords:** `diseña`, `UI`, `componente`, `marca`, `paleta`, `tipografía`, `wireframe`
-
-```
-UIAgent → UXAgent → BrandAgent → A11yAgent
-(specs     (CSS +    (guías de   (WCAG
- UI)        tokens)   marca)      auditoría)
-```
-
-**Agentes del Registry mapeados:**
-- `design-ui-designer` → UIAgent
-- `design-ux-architect` → UXAgent
-- `design-brand-guardian` → BrandAgent
-- `testing-accessibility-auditor` → A11yAgent
-- `design-whimsy-injector` → UIAgent (micro-interacciones)
-- `design-image-prompt-engineer` → (tool auxiliar)
-
----
-
-### MARKETING pipeline
-
-**Trigger keywords:** `marketing`, `campaña`, `copy`, `landing`, `crecimiento`, `adquisición`, `viral`
-
-```
-StrategyAgent → CopyAgent → GrowthAgent → AnalyticsAgent
-(estrategia     (copy:       (loops de     (CAC, LTV,
- canales)        ads, emails)  adquisición)  conversion)
-```
-
-**Agentes del Registry mapeados:**
-- `marketing-social-media-strategist` → StrategyAgent
-- `marketing-content-creator` → CopyAgent
-- `marketing-growth-hacker` → GrowthAgent
-- `support-analytics-reporter` → AnalyticsAgent
-- `marketing-reddit-community-builder` → GrowthAgent (comunidad)
-- `marketing-app-store-optimizer` → GrowthAgent (ASO)
-
-> **Nota:** Los 3 agentes de mercado chino (Xiaohongshu, WeChat, Zhihu) son variantes del pipeline MARKETING activables por contexto geográfico, no pipelines independientes.
-
----
-
-### ANALYTICS pipeline
-
-**Trigger keywords:** `reporte`, `KPIs`, `métricas`, `dashboard`, `consolida`, `distribuye`, `ventas`
+**Trigger keywords:** `reporte`, `KPIs`, `métricas`, `dashboard`, `consolida`
 
 ```
 DataCollector → InsightGenerator → ReportDistributor
-(consolida       (insights de       (formatea y
- fuentes)         negocio)           distribuye)
+ consolida        insights de        formatea y
+ fuentes          negocio            distribuye vía Slack¹
 ```
 
-**Agentes del Registry mapeados:**
-- `data-consolidation-agent` → DataCollector
-- `data-analytics-reporter` → InsightGenerator
-- `report-distribution-agent` → ReportDistributor
-- `sales-data-extraction-agent` → DataCollector (ventas)
+¹ `ReportDistributorAgent` pendiente conectar `slack` MCP
 
 ---
 
-### PRODUCT pipeline
+## CONTENT pipeline
 
-**Trigger keywords:** `competidores`, `validar idea`, `feedback usuarios`, `feature`, `prioriza`, `nudge`
+**Trigger keywords:** `contenido`, `tweet`, `hilo`, `post`, `newsletter`, `redacta`
+
+```
+TopicAgent → WriterAgent → EditorAgent → BrandAgent → SchedulerAgent
+```
+
+---
+
+## QA pipeline
+
+**Trigger keywords:** `audita`, `revisa`, `bugs`, `tests`, `calidad`, `vulnerabilidades`
+
+```
+StaticAnalyzer → BugHunter → SecurityReviewer → PerformanceProfiler → TestGenerator
+```
+
+**MCPs objetivo:**
+- `SecurityReviewer` → `semgrep` + `deepwiki`
+- `TestGenerator` → `playwright`
+
+---
+
+## PM pipeline
+
+**Trigger keywords:** `roadmap`, `backlog`, `sprint`, `épicas`, `historias`, `planifica`
+
+```
+RequirementsParser → BacklogBuilder → SprintPlanner → RoadmapGenerator
+```
+
+---
+
+## OFFICE pipeline
+
+**Trigger keywords:** `excel`, `csv`, `pdf`, `word`, `archivo`, `analiza`
+
+```
+FileReader → DataAnalyzer → ReportWriter
+```
+
+---
+
+## MARKETING pipeline
+
+**Trigger keywords:** `marketing`, `campaña`, `copy`, `landing`, `crecimiento`, `adquisición`
+
+```
+StrategyAgent → CopyAgent → GrowthAgent → AnalyticsAgent
+```
+
+---
+
+## PRODUCT pipeline
+
+**Trigger keywords:** `competidores`, `validar idea`, `feedback`, `feature`, `prioriza`
 
 ```
 MarketResearcher → FeedbackSynthesizer → FeaturePrioritizer → NudgeDesigner
-(análisis          (síntesis de          (priorización         (nudges de
- competitivo)       feedback)             data-driven)          comportamiento)
 ```
-
-**Agentes del Registry mapeados:**
-- `product-trend-researcher` → MarketResearcher
-- `product-feedback-synthesizer` → FeedbackSynthesizer
-- `product-sprint-prioritizer` → FeaturePrioritizer
-- `product-behavioral-nudge-engine` → NudgeDesigner
 
 ---
 
-### SECURITY_AUDIT pipeline
+## SECURITY_AUDIT pipeline
 
-**Trigger keywords:** `threat model`, `compliance`, `GDPR`, `vulnerabilidades críticas`, `zero-trust`
+**Trigger keywords:** `threat model`, `compliance`, `GDPR`, `vulnerabilidades críticas`
 
 ```
 ThreatModeler → CodeReviewer → ComplianceChecker
-(modelado de    (OWASP Top 10  (GDPR/CCPA/
- amenazas)       revisión)       API TOS)
 ```
 
-**Agentes del Registry mapeados:**
-- `engineering-security-engineer` → ThreatModeler + CodeReviewer
-- `agentic-identity-trust` → ThreatModeler (zero-trust)
-- `support-legal-compliance-checker` → ComplianceChecker
+**MCPs objetivo:**
+- `ThreatModeler` → `semgrep`
+- `CodeReviewer` → `deepwiki` + `semgrep`
 
 ---
 
-## Agentes transversales (sin pipeline propio)
+## DESIGN pipeline
 
-Estos agentes del Registry actúan como **capacidades auxiliares** usadas por múltiples pipelines, no como pipelines independientes:
+**Trigger keywords:** `diseña`, `UI`, `componente`, `marca`, `paleta`, `wireframe`
 
-| Agente Registry | Rol en CLAW |
-|-----------------|-------------|
-| `agents-orchestrator` | Es el Maestro mismo |
-| `engineering-rapid-prototyper` | Modo fast del pipeline DEV (`--fast`) |
-| `engineering-mobile-app-builder` | Variante del pipeline DEV para móvil |
-| `lsp-index-engineer` | Tool auxiliar para indexación semántica de código |
-| `specialized-cultural-intelligence-strategist` | Contexto del pipeline MARKETING |
-| `specialized-developer-advocate` | Output formatter del pipeline DEV |
-| `design-ux-researcher` | Input enricher del pipeline PRODUCT |
-| `design-inclusive-visuals-specialist` | Constraint del pipeline DESIGN |
-| `project-management-project-shepherd` | Coordinación cross-pipeline (Maestro) |
-| `project-management-studio-operations` | Eficiencia operacional (infra) |
-| `support-support-responder` | Template responses (out of scope) |
-| `support-finance-tracker` | Tool del pipeline ANALYTICS |
-| `support-executive-summary-generator` | Output formatter multi-pipeline |
-| `testing-tool-evaluator` | Tool del pipeline QA (evalúa stack) |
-| `testing-workflow-optimizer` | Tool del pipeline QA (optimiza flujos) |
-| XR/Spatial (6 agentes) | Out of scope activo — disponibles si hay caso de uso |
+```
+UIAgent → UXAgent → BrandAgent → A11yAgent → PromptEngineer
+```
 
 ---
 
-## Cobertura final
+## MCPHub — Mapa de MCPs por agente
 
 ```
-70 agentes del Registry
-├── 12 pipelines CLAW               ← 52 agentes activos
-│   ├── 7 pipelines v1.0.0
-│   └── 5 pipelines nuevos (Fase 9)
-├── ~12 agentes transversales       ← capacidades auxiliares
-└── 6 agentes Spatial Computing     ← out of scope activo
+MCP                  → Agentes que lo usan
+─────────────────────────────────────────────
+mcp_memory           → TODOS (BaseAgent lo inyecta)
+sequential_thinking  → PlannerAgent, Maestro
+brave_search         → WebScoutAgent
+context7             → CoderAgent
+deepwiki             → CoderAgent, SecurityReviewer
+supabase_mcp         → DataAgent, ReportDistributor, DataCollector
+coingecko            → DataAgent, BacktestReader
+okx                  → DataAgent, BacktestReader
+github_mcp           → CoderAgent, GitAgent
+semgrep              → SecurityAgent, ThreatModeler, CodeReviewer
+playwright           → TestGenerator
+slack                → ReportDistributor
+n8n                  → Cualquier agente de automatización
 ```
-
-**Cobertura funcional:** ~94% de los 70 agentes tienen lugar en la arquitectura.
-El 6% restante (Spatial/XR) está disponible si hay un caso de uso concreto.
 
 ---
 
@@ -389,13 +260,40 @@ from core.context import AgentContext
 
 class NombreAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentContext:
-        # 1. Leer inputs del contexto
-        # 2. Construir prompt
-        # 3. Llamar self.llm(prompt, context)
-        # 4. Parsear respuesta
-        # 5. Escribir outputs al contexto
-        # 6. Retornar contexto
+        # 1. Recuperar memoria previa (automático vía BaseAgent cuando esté conectado)
+        # 2. Leer inputs del contexto
+        # 3. Opcionalmente llamar MCPs: await context.mcp.call("mcp_name", "tool", {...})
+        # 4. Construir prompt
+        # 5. Llamar self.llm(prompt, context)
+        # 6. Parsear respuesta
+        # 7. Escribir outputs al contexto
+        # 8. Retornar contexto
         return context
+```
+
+### Llamar un MCP desde un agente
+
+```python
+# Ejemplo: WebScoutAgent usando brave_search
+result = await context.mcp.call(
+    "brave_search",
+    "search",
+    {"query": "Bitcoin price analysis 2026", "count": 10}
+)
+
+# Ejemplo: PlannerAgent usando sequential_thinking
+plan = await context.mcp.call(
+    "sequential_thinking",
+    "decompose",
+    {"problem": context.task, "steps": 5}
+)
+
+# Verificar disponibilidad antes de llamar
+if context.mcp.is_available("brave_search"):
+    result = await context.mcp.call("brave_search", "search", {...})
+else:
+    # fallback a DuckDuckGo
+    result = await tools.web_search(query)
 ```
 
 ### Registrar un pipeline nuevo
@@ -403,11 +301,11 @@ class NombreAgent(BaseAgent):
 1. Crear agentes en `agents/<pipeline>/`
 2. Añadir entrada en `config.yaml` bajo `pipelines:`
 3. Añadir builder en `core/maestro.py` → método `_build_<pipeline>_pipeline()`
-4. Añadir keywords de clasificación en `core/maestro.py` → `_classify_task()`
+4. Añadir keywords en `core/maestro.py` → `_classify_task()`
 5. Crear ejemplo en `examples/<pipeline>_example.py`
 6. Actualizar `ROADMAP.md` con ítems completados
 
-### Patrones de pipeline
+### Patrones de ejecución
 
 ```yaml
 # config.yaml — pipeline secuencial
@@ -415,9 +313,24 @@ dev:
   type: sequential
   agents: [planner, coder, reviewer, security, executor, git]
 
-# config.yaml — pipeline paralelo + secuencial
+# config.yaml — paralelo + secuencial
 research:
   type: parallel_then_sequential
   parallel_agents: [web_scout, data]
   sequential_agents: [analyst, thesis]
 ```
+
+---
+
+## Cobertura del Registry
+
+```
+70 agentes del Registry
+├── 12 pipelines CLAW               ← ~52 agentes activos
+│   ├── 7 pipelines v1.0.0–v2.0.0
+│   └── 5 pipelines Fase 9
+├── ~12 agentes transversales       ← capacidades auxiliares
+└── 6 agentes Spatial/XR            ← out of scope activo
+```
+
+**Cobertura funcional:** ~94% de los 70 agentes tienen lugar en la arquitectura.

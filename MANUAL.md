@@ -1,455 +1,340 @@
-# 📖 Manual de Usuario — CLAW Agent System
+# MANUAL TÉCNICO — CLAW Agent System
 
-> **Para quién es este manual:** cualquier persona que quiera usar el sistema, sin importar si sabe programar o no.
-> **Versión actual:** v2.1.0 | **Última actualización:** Abril 2026
-
----
-
-## ¿Qué es CLAW?
-
-CLAW es un **asistente inteligente** que trabaja en tu computadora. Le das una tarea en español o inglés, y él la ejecuta solo, paso a paso, usando inteligencia artificial.
-
-Es como tener un equipo de especialistas virtuales disponibles 24/7:
-- Un **planificador** que organiza el trabajo
-- Un **programador** que escribe código
-- Un **revisor** que verifica la calidad
-- Un **analista** que investiga información
-- ...y más, según el tipo de tarea
-
-Lo mejor: **funciona sin internet** usando tu propia computadora como cerebro principal.
+> Guía completa para desarrollar, depurar y extender el sistema.
+> Versión: 2.1.0 · Última actualización: Abril 7, 2026
 
 ---
 
-## ✅ Instalación — Paso a Paso
+## Estado actual del sistema
 
-### Paso 1: Instalar Python
-Si no tienes Python instalado:
-1. Ve a [python.org/downloads](https://python.org/downloads)
-2. Descarga la versión **3.10 o superior**
-3. Durante la instalación, marca la casilla **"Add Python to PATH"**
-4. Haz clic en "Install Now"
+### Lo que funciona hoy
 
-**Verificar instalación:** Abre la terminal (cmd en Windows) y escribe:
-```
-python --version
-```
-Debe mostrar algo como `Python 3.11.x`
+| Componente | Archivo | Estado |
+|---|---|---|
+| Orquestación (Maestro) | `core/maestro.py` | ✅ 12 pipelines, clasificación LLM + keywords |
+| Router de pipelines | `core/pipeline_router.py` | ✅ Sequential + parallel_then_sequential |
+| Control de reintentos | `core/loop_controller.py` | ✅ Retry + recovery con límites |
+| Router de LLMs | `core/api_router.py` | ✅ Ollama → Groq → Gemini → Hyperspace |
+| Contexto compartido | `core/context.py` | ✅ AgentContext tipado |
+| Base de agente | `core/base_agent.py` | ✅ Tracing automático |
+| Memoria SQLite+Supabase | `infrastructure/memory_manager.py` | ✅ Persistencia dual |
+| MCPHub (13 MCPs) | `infrastructure/mcp_hub.py` | ⚠️ Implementado, no conectado |
+| Audit logger | `infrastructure/audit_logger.py` | ✅ Tracing por agente |
+| Input sanitizer | `infrastructure/input_sanitizer.py` | ✅ 13 patrones, 3 capas |
+| Security sandbox | `infrastructure/security_sandbox.py` | ✅ Filesystem + comandos |
+| Todos los agentes | `agents/*/` | ⚠️ Estructura real, calidad variable |
+| Dashboard UI | `ui/server.py` + `ui/index.html` | ❓ Verificar estado |
+| Tests E2E | `tests/test_e2e_pipelines.py` | ✅ 12 tests con mock LLM |
 
----
+### Lo que NO funciona todavía
 
-### Paso 2: Instalar Ollama (cerebro local)
-Ollama es el programa que hace funcionar la IA en tu propia computadora, sin enviar datos a internet.
-
-**En Windows:**
-```
-winget install Ollama.Ollama
-```
-O descárgalo desde [ollama.com](https://ollama.com)
-
-**Descargar el modelo de IA:**
-```
-ollama pull qwen2.5-coder:7b-q4_K_M
-```
-> ⏱️ Esto descarga ~4.5 GB. Solo se hace una vez.
+1. **`ctx.mcp`** — `AgentContext` no expone el `MCPHub`. Los agentes no pueden llamar MCPs.
+2. **`mcp_memory` en BaseAgent** — ningún agente persiste ni recupera memoria automáticamente.
+3. **`sequential_thinking` en PlannerAgent** — el planner no usa razonamiento estructurado.
+4. **Stubs en raíz** — `agents/trading_agent.py` etc. son versiones antiguas con `pass` o lógica mínima.
+5. **Sin smoke tests** — cambios pueden romper silenciosamente flujos críticos.
 
 ---
 
-### Paso 3: Descargar CLAW
-```
-git clone https://github.com/ariaslopez/orquestador-multiagente.git
+## Setup de desarrollo
+
+```bash
+# Clonar y entrar
+git clone https://github.com/ariaslopez/orquestador-multiagente
 cd orquestador-multiagente
-```
 
----
+# Entorno virtual
+python -m venv venv
+source venv/bin/activate          # Linux/Mac
+venv\Scripts\activate              # Windows
 
-### Paso 4: Instalar dependencias
-```
+# Dependencias
 pip install -r requirements.txt
-```
 
----
+# Configurar .env
+cp .env.example .env
+# Editar .env — mínimo: GROQ_API_KEY
 
-### Paso 5: Configuración inicial
-Ejecuta el asistente de configuración automática:
-```
-python setup.py
-```
-El asistente te pedirá:
-- 🔑 **Groq API Key** (gratis en [console.groq.com](https://console.groq.com)) — para tareas de investigación
-- 🔑 **Gemini API Key** (gratis en [aistudio.google.com](https://aistudio.google.com)) — respaldo adicional
-- Estas claves son opcionales pero mejoran la calidad en tareas complejas
+# Ollama (recomendado para desarrollo local)
+winget install Ollama.Ollama       # Windows
+brew install ollama                # Mac
+ollama pull qwen2.5-coder:7b-q4_K_M
 
----
-
-### Paso 6: Verificar que todo funciona
-```
+# Verificar todo
 python main.py --doctor
 ```
-Deberías ver algo así:
+
+### Variables de entorno por prioridad
+
+```env
+# ── OBLIGATORIAS ──────────────────────────────────────
+GROQ_API_KEY=tu_clave              # https://console.groq.com (gratis)
+
+# ── RECOMENDADAS ──────────────────────────────────────
+OLLAMA_ENABLED=true
+OLLAMA_HW_PROFILE=cpu_24gb        # ver perfiles abajo
+GEMINI_API_KEY=tu_clave           # fallback LLM
+GITHUB_TOKEN=ghp_...              # para github_mcp
+
+# ── SUPABASE (memoria cloud) ──────────────────────────
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_KEY=tu_anon_key
+
+# ── MCPs opcionales ───────────────────────────────────
+BRAVE_API_KEY=your_key            # para brave_search
+CONTEXT7_API_KEY=your_key         # para context7
+DEEPWIKI_API_KEY=your_key         # para deepwiki
+OKX_API_KEY=your_key              # para okx
+SLACK_BOT_TOKEN=xoxb-...          # para slack
+N8N_WEBHOOK_URL=https://...       # para n8n
+COINGECKO_API_KEY=your_key        # opcional, free tier sin key
+MCP_TIMEOUT=30                    # timeout en segundos
+
+# ── SEGURIDAD ─────────────────────────────────────────
+GITHUB_CONFIRM_BEFORE_PUSH=true
 ```
-✅ Ollama: activo (qwen2.5-coder:7b)
-✅ Groq: conectado
-✅ Gemini: conectado
-✅ Sistema listo — v2.1.0
+
+### Perfiles de hardware Ollama
+
+| Perfil | Hardware | GPU layers | Context |
+|---|---|---|---|
+| `cpu_24gb` | CPU + 24 GB RAM (default) | 4 (iGPU) | 32,768 |
+| `gpu_8gb` | RTX 3070 / RX 6700 XT | 33 | 32,768 |
+| `gpu_16gb` | RTX 4070 / RX 7900 | 43 | 65,536 |
+| `gpu_24gb` | RTX 4090 / RX 7900 XTX | 65 | 128,000 |
+
+---
+
+## Estructura de directorios — decisiones de diseño
+
+```
+core/          → orquestación pura, sin I/O externo
+agents/        → un directorio por pipeline, un archivo por agente
+infrastructure/→ servicios de soporte (memoria, seguridad, MCPs)
+tools/         → funciones utilitarias sin estado propio
+ui/            → servidor FastAPI + frontend
+tests/         → tests que no requieren API keys (mock LLM)
+examples/      → scripts ejecutables por pipeline
+```
+
+### ¿Por qué hay archivos sueltos en `agents/`?
+
+`agents/trading_agent.py`, `agents/qa_agent.py`, etc. son **stubs de una versión anterior** (Fase 3). Los sub-agentes reales están en `agents/trading/`, `agents/qa/`, etc. Los stubs deben eliminarse en Fase 12.
+
+### ¿Por qué existen `orchestrator.py` y `pipeline.py` en `core/`?
+
+Son de una versión temprana antes de que `Maestro` + `PipelineRouter` + `LoopController` reemplazaran esa lógica. Deben evaluarse y eliminarse si no tienen código activo. Ver `ROADMAP.md → Fase 12 - Paso 3`.
+
+---
+
+## Cómo crear un agente nuevo
+
+```python
+# agents/<pipeline>/<nombre>_agent.py
+from core.base_agent import BaseAgent
+from core.context import AgentContext
+
+class NombreAgent(BaseAgent):
+    """
+    Descripción de qué hace este agente y en qué pipeline vive.
+    MCPs que usa: brave_search, mcp_memory
+    """
+
+    async def run(self, context: AgentContext) -> AgentContext:
+        # 1. Leer inputs del contexto
+        task = context.task
+        prev_output = context.get("prev_agent_output")
+
+        # 2. Llamar MCP si está disponible (cuando MCPHub esté conectado)
+        # if context.mcp.is_available("brave_search"):
+        #     results = await context.mcp.call("brave_search", "search", {"query": task})
+
+        # 3. Construir prompt
+        prompt = f"""
+        Tarea: {task}
+        Contexto previo: {prev_output}
+        ...
+        """
+
+        # 4. Llamar LLM
+        response = await self.llm(prompt, context)
+
+        # 5. Escribir output al contexto
+        context.set("nombre_output", response)
+
+        return context
 ```
 
 ---
 
-## 🚀 Uso Básico
+## Cómo llamar un MCP
 
-### El comando principal
+> ⚠️ Esto funcionará una vez que se complete Fase 12 - Paso 1 (conectar MCPHub a AgentContext).
+
+```python
+# Verificar disponibilidad
+if context.mcp.is_available("brave_search"):
+    results = await context.mcp.call(
+        "brave_search",
+        "search",
+        {"query": "Bitcoin 2026", "count": 10}
+    )
+
+# Ver todos los MCPs disponibles
+print(context.mcp.available())
+
+# Ver MCPs de una categoría
+print(context.mcp.available("trading"))
+
+# Ver estado completo
+print(context.mcp.status())
 ```
-python main.py --task "tu tarea aquí" --type tipo_de_tarea
-```
 
-**Ejemplo real:**
-```
-python main.py --task "Crea una calculadora web" --type dev
-```
+### MCPs que funcionan sin ninguna configuración
 
-CLAW hará todo el trabajo: planifica, escribe el código, lo revisa, lo prueba y lo guarda en la carpeta `output/`.
+```python
+# mcp_memory — guardar y recuperar memoria
+await context.mcp.call("mcp_memory", "save", {"key": "...", "value": "..."})
+await context.mcp.call("mcp_memory", "retrieve", {"key": "..."})
 
----
+# sequential_thinking — razonamiento estructurado
+await context.mcp.call("sequential_thinking", "decompose", {"problem": task, "steps": 5})
 
-## 🎯 Los 12 Tipos de Tarea (Pipelines)
+# coingecko — datos de criptomonedas
+await context.mcp.call("coingecko", "get_price", {"ids": "bitcoin", "vs_currencies": "usd"})
 
-Elige el tipo según lo que necesitas hacer:
+# semgrep — análisis de seguridad
+await context.mcp.call("semgrep", "scan", {"code": source_code, "language": "python"})
 
-### 💻 `dev` — Desarrollo de Software
-**¿Cuándo usarlo?** Cuando quieres crear o mejorar un programa, script, API, o cualquier cosa de código.
-```
-python main.py --task "Crea una API para gestionar inventario" --type dev
-python main.py --task "Agrega autenticación a mi app Flask" --type dev
-```
-6 agentes trabajan en secuencia: Planificador → Programador → Revisor de código → Revisor de seguridad → Ejecutor → Git
-
----
-
-### 🔍 `research` — Investigación
-**¿Cuándo usarlo?** Cuando necesitas investigar un tema, buscar información, analizar fuentes.
-```
-python main.py --task "Investiga las mejores estrategias de trading algorítmico en 2026" --type research
-python main.py --task "Analiza el mercado de criptomonedas esta semana" --type research
-```
-4 agentes: Buscador web → Recolector de datos → Analista → Redactor del reporte
-
----
-
-### ✍️ `content` — Creación de Contenido
-**¿Cuándo usarlo?** Posts para redes sociales, artículos de blog, emails, newsletters.
-```
-python main.py --task "Escribe 5 posts de LinkedIn sobre trading algorítmico" --type content
-python main.py --task "Crea un artículo de blog sobre Python para finanzas" --type content
+# playwright — automatización web
+await context.mcp.call("playwright", "navigate", {"url": "https://..."})
 ```
 
 ---
 
-### 📄 `office` — Documentos de Trabajo
-**¿Cuándo usarlo?** Reportes, presentaciones, resúmenes ejecutivos, propuestas.
-```
-python main.py --task "Crea un reporte ejecutivo de resultados Q1 2026" --type office
-python main.py --task "Genera una propuesta comercial para servicios de IA" --type office
-```
-
----
-
-### 🧪 `qa` — Control de Calidad
-**¿Cuándo usarlo?** Revisar y probar código existente, encontrar bugs, generar tests.
-```
-python main.py --task "Revisa y prueba este módulo de pagos" --type qa
-python main.py --task "Genera tests unitarios para la función de backtest" --type qa
-```
-
----
-
-### 📈 `trading` — Análisis de Trading
-**¿Cuándo usarlo?** Estrategias de trading, análisis técnico, señales, backtesting.
-```
-python main.py --task "Analiza la estrategia RSI + MACD para BTC/USDT" --type trading
-python main.py --task "Diseña una estrategia de scalping para forex" --type trading
-```
-
----
-
-### 📋 `pm` — Gestión de Proyectos
-**¿Cuándo usarlo?** Planificar proyectos, crear roadmaps, organizar tareas, sprints.
-```
-python main.py --task "Crea el roadmap para lanzar un SaaS de trading en 3 meses" --type pm
-python main.py --task "Organiza las tareas del sprint de este mes" --type pm
-```
-
----
-
-### 📊 `analytics` — Análisis de Datos
-**¿Cuándo usarlo?** Analizar datos, generar reportes con métricas, insights de negocio.
-```
-python main.py --task "Analiza estos datos de ventas y encuentra patrones" --type analytics
-python main.py --task "Genera un dashboard de métricas para mi bot de trading" --type analytics
-```
-
----
-
-### 📣 `marketing` — Marketing
-**¿Cuándo usarlo?** Estrategias de marketing, campañas, copy publicitario, SEO.
-```
-python main.py --task "Crea una campaña de email marketing para mi producto de IA" --type marketing
-python main.py --task "Escribe copy para anuncios de Facebook de un servicio de trading" --type marketing
-```
-
----
-
-### 🎯 `product` — Diseño de Producto
-**¿Cuándo usarlo?** Definir features, user stories, PRDs, especificaciones de producto.
-```
-python main.py --task "Define los features principales para una app de señales de trading" --type product
-python main.py --task "Crea el PRD para un dashboard de análisis de portafolio" --type product
-```
-
----
-
-### 🔐 `security_audit` — Auditoría de Seguridad
-**¿Cuándo usarlo?** Revisar código en busca de vulnerabilidades, malas prácticas de seguridad.
-```
-python main.py --task "Audita la seguridad de este endpoint de autenticación" --type security_audit
-python main.py --task "Revisa si hay vulnerabilidades en mi API de pagos" --type security_audit
-```
-⚠️ Este pipeline usa Groq (cloud) para mayor capacidad de análisis.
-
----
-
-### 🎨 `design` — Diseño UI/UX
-**¿Cuándo usarlo?** Diseño de interfaces, sistemas de diseño, UX research, wireframes.
-```
-python main.py --task "Diseña la UI para un dashboard de trading" --type design
-python main.py --task "Crea el sistema de diseño para una app fintech" --type design
-```
-
----
-
-## ⚙️ Opciones Avanzadas
-
-### Ver el plan antes de ejecutar
-```
-python main.py --task "Crea una API de trading" --type dev --plan
-```
-CLAW te muestra qué va a hacer antes de hacer algo. Úsalo cuando la tarea es importante y quieres verificar el approach.
-
----
-
-### Ejecutar sin confirmaciones (modo autónomo)
-```
-python main.py --task "Crea una API de trading" --type dev --auto
-```
-CLAW trabaja de principio a fin sin pedirte confirmaciones. Ideal cuando confías en la tarea.
-
----
-
-### Controlar la profundidad de investigación
-```
-# Rápido y ligero (ahorra tiempo y recursos)
-python main.py --task "..." --effort min
-
-# Balance (por defecto)
-python main.py --task "..." --effort normal
-
-# Profundo y detallado (para tareas críticas)
-python main.py --task "..." --effort max
-```
-
----
-
-### Referenciar archivos en tu tarea
-```
-python main.py --task "Mejora el rendimiento de @src/backtester.py" --type dev
-```
-CLAW leerá ese archivo y lo tendrá como contexto al trabajar.
-
----
-
-### Pasar contenido por tubería (pipe)
-```
-cat mi_codigo.py | python main.py --type qa --stdin
-git diff HEAD~1 | python main.py --type security_audit --stdin
-```
-Útil para pasar código o datos directamente desde la terminal.
-
----
-
-### Modo interactivo
-```
-python main.py --interactive
-```
-Abre un loop donde puedes dar múltiples tareas una tras otra sin reescribir el comando.
-
----
-
-### Dashboard visual en el navegador
-```
-python main.py --ui
-```
-Abre el dashboard en tu navegador: **http://127.0.0.1:8000**
-Desde ahí puedes dar tareas y ver cómo trabaja cada agente en tiempo real.
-
----
-
-## 📂 ¿Dónde están los resultados?
-
-Todo lo que genera CLAW se guarda en:
-```
-orquestador-multiagente/
-  output/
-    nombre-del-proyecto/    ← carpeta creada automáticamente
-      *.py                  ← código generado
-      README.md             ← documentación del proyecto
-      tests/                ← tests generados
-      ...
-```
-
----
-
-## 🛠️ Comandos del Sistema
+## Cómo ejecutar tests
 
 ```bash
-# Ver estado del sistema
+# Todos (no requieren API keys)
+pytest tests/ -v
+
+# Por módulo
+pytest tests/test_pipeline_imports.py -v     # 52 agentes + 12 pipelines
+pytest tests/test_e2e_pipelines.py -v        # 12 tests E2E con mock LLM
+pytest tests/test_input_sanitizer.py -v      # Seguridad de inputs
+
+# Con cobertura
+pytest tests/ --cov=core --cov=agents --cov-report=term-missing
+```
+
+### Smoke tests pendientes (Fase 14)
+
+```bash
+# Estos tests NO existen todavía — crearlos es prioridad en Fase 14
+pytest tests/test_smoke.py::test_pipeline_classification
+pytest tests/test_smoke.py::test_loop_controller_retry
+pytest tests/test_smoke.py::test_mcp_hub_fallback
+pytest tests/test_smoke.py::test_supabase_persistence
+pytest tests/test_smoke.py::test_api_router_fallback
+```
+
+---
+
+## Debugging común
+
+### El sistema usa el provider equivocado
+```bash
 python main.py --doctor
+# Muestra estado de todos los providers y cuál está activo
+```
 
-# Ver historial de tareas recientes
-python main.py --history
+### Un agente no encuentra otro agente
+```python
+# Verificar que el import en maestro.py apunta al directorio correcto
+# ✅ from agents.trading.backtest_reader import BacktestReaderAgent
+# ❌ from agents.trading_agent import TradingAgent  ← stub antiguo
+```
 
-# Ver tokens y costos acumulados
-python main.py --usage
+### Un MCP no responde
+```python
+from infrastructure.mcp_hub import get_mcp_hub
+hub = get_mcp_hub()
+print(hub.status())          # muestra todos los MCPs y si están configurados
+print(hub.available())       # solo los que tienen config válida
+```
 
-# Retomar una tarea interrumpida
-python main.py --resume abc123
+### Ver logs de un pipeline en tiempo real
+```bash
+tail -f data/claw.log
+# O filtrar por pipeline
+tail -f data/claw.log | grep "\[trading\]"
+```
 
-# Ver ayuda completa
-python main.py --help
+### Verificar que la memoria persiste
+```python
+from infrastructure.memory_manager import MemoryManager
+mm = MemoryManager()
+recent = mm.get_recent_sessions(limit=5)
+print(recent)
 ```
 
 ---
 
-## ❓ Problemas Comunes y Soluciones
-
-### ❌ "Ollama no está corriendo"
-**Solución:** Abre Ollama manualmente:
-- Windows: busca "Ollama" en el menú inicio y ábrelo
-- O en terminal: `ollama serve`
-
----
-
-### ❌ "No module named..."
-**Solución:** Reinstala las dependencias:
-```
-pip install -r requirements.txt
-```
-
----
-
-### ❌ La tarea se demora mucho
-**Razón:** Sin GPU dedicada, la IA corre en CPU (~4-7 palabras por segundo).
-**Soluciones:**
-- Usa `--effort min` para tareas simples
-- Deja que corra en segundo plano
-- Para tareas largas, usa `--auto` para que no espere confirmaciones tuyas
-
----
-
-### ❌ "API Key no válida" (Groq o Gemini)
-**Solución:** Edita el archivo `.env` y verifica que las claves estén correctas:
-```
-notepad .env          # Windows
-nano .env             # Mac/Linux
-```
-Las claves gratuitas se obtienen en:
-- Groq: [console.groq.com](https://console.groq.com)
-- Gemini: [aistudio.google.com](https://aistudio.google.com)
-
----
-
-### ❌ Los archivos generados no aparecen
-**Solución:** Busca en la carpeta `output/` dentro del proyecto. Si diste un nombre de proyecto en la tarea, habrá una subcarpeta con ese nombre.
-
----
-
-### ❌ El sistema genera código con errores
-**Solución:**
-1. Usa `--type qa` para que otro agente lo revise:
-   ```
-   python main.py --task "Revisa y corrige el código en output/mi-proyecto/" --type qa
-   ```
-2. O pasa el código con `--stdin`:
-   ```
-   cat output/mi-proyecto/main.py | python main.py --type qa --stdin
-   ```
-
----
-
-## 🔑 Resumen de claves API necesarias
-
-| API | Necesaria | Cómo obtenerla | Límite gratuito |
-|-----|-----------|----------------|------------------|
-| Groq | Recomendada | [console.groq.com](https://console.groq.com) | 14,400 tokens/min |
-| Gemini | Recomendada | [aistudio.google.com](https://aistudio.google.com) | 1M tokens/día |
-| GitHub Token | Opcional | GitHub → Settings → Developer Settings | Según plan |
-| Ollama | ✅ Incluido | Se instala en tu PC | Ilimitado (local) |
-
----
-
-## 💡 Consejos para Mejores Resultados
-
-1. **Sé específico** — Mejor `"Crea una API REST en FastAPI con endpoints para CRUD de usuarios con JWT"` que `"Crea una API"`
-
-2. **Usa el tipo correcto** — Si quieres código, usa `dev`. Si quieres un reporte, usa `office`. El tipo determina qué equipo de agentes trabaja.
-
-3. **Usa `--plan` primero** para tareas grandes — Verifica el enfoque antes de ejecutar.
-
-4. **Revisa con `--type qa`** después de `--type dev` — El pipeline QA es tu segunda capa de revisión.
-
-5. **Referencia archivos con `@`** — `"Mejora @src/strategy.py para incluir stop-loss dinámico"` es mucho más preciso que describir el archivo.
-
-6. **Para tareas de trading** — El pipeline `trading` está optimizado para análisis técnico, mientras que `analytics` es mejor para datos históricos y métricas.
-
----
-
-## 📋 Referencia rápida — Todos los comandos
+## CLI — referencia completa
 
 ```bash
-# TAREAS
-python main.py --task "..." --type dev|research|content|office|qa|trading|pm|analytics|marketing|product|security_audit|design
+# Ejecución por pipeline
+python main.py --task "<tarea>" --type <pipeline>
+python main.py --task "<tarea>" --type dev --file src/module.py
 
-# MODIFICADORES
-  --plan          Solo ver el plan, no ejecutar
-  --auto          Ejecutar sin confirmaciones
-  --effort min|normal|max   Profundidad de trabajo
-  --stdin         Recibir contenido por pipe
+# Clasificación automática
+python main.py --task "¿Cuál es el Sharpe de este bot?"
 
-# SESIONES
-  --resume ID     Retomar sesión interrumpida
-  --rewind ID     Revertir a checkpoint anterior
-  --history       Ver últimas 20 sesiones
+# Sistema
+python main.py --doctor          # Diagnóstico completo: LLMs + MCPs + memoria
+python main.py --interactive     # Loop de tareas en terminal
+python main.py --ui              # Dashboard → http://127.0.0.1:8000
+python main.py --history         # Últimas 20 sesiones
+python main.py --usage           # Tokens y costos acumulados
+```
 
-# SISTEMA
-  --doctor        Diagnóstico del sistema
-  --ui            Dashboard en navegador
-  --interactive   Modo de múltiples tareas
-  --usage         Ver tokens y costos
-  --init /ruta    Analizar proyecto existente (próximamente)
-  --help          Ver toda la ayuda
+### Pipelines disponibles
+
+```
+dev · research · content · office · qa · pm
+trading · analytics · marketing · product · security_audit · design
 ```
 
 ---
 
-## 🗺️ ¿Qué viene próximamente?
+## Contribuir
 
-| Feature | Descripción | Cuándo |
-|---------|-------------|--------|
-| **Loop de corrección** | El sistema detecta errores y los corrige solo | v2.2.0 |
-| **Analizar proyectos** | `--init` para que CLAW entienda tu proyecto existente | v2.3.0 |
-| **Memoria** | CLAW recuerda lo que funcionó en tareas anteriores | v2.4.0 |
-| **GPU rápida** | Con GPU dedicada, 10x más velocidad | v3.0.0 |
+1. Fork + branch descriptivo: `feat/mcp-context-connection` o `fix/planner-sequential-thinking`
+2. Un PR por feature o fix
+3. Los tests deben pasar: `pytest tests/ -v`
+4. Actualizar `ROADMAP.md` marcando ítems completados
+5. Si creas un agente nuevo, seguir la estructura de `NombreAgent` documentada arriba
+6. Si conectas un MCP nuevo, agregarlo a la tabla de `README.md`
 
 ---
 
-> 📬 **¿Tienes dudas o sugerencias?** Abre un issue en [github.com/ariaslopez/orquestador-multiagente](https://github.com/ariaslopez/orquestador-multiagente/issues)
->
-> 🔄 **Este manual se actualiza automáticamente** con cada nueva versión del sistema.
+## Changelog
+
+### v2.1.0 (Abril 2026)
+- `infrastructure/mcp_hub.py` — proxy universal para 13 MCPs
+- `core/api_router.py` — estrategia local_first con 4 providers y perfiles de hardware
+- Bugs corregidos: double retry silencioso, race condition singleton,
+  costo contra provider equivocado, @retry sobre async def
+- Documentación completa actualizada (README, ROADMAP, ARCHITECTURE, MANUAL)
+
+### v2.0.0 (Marzo 2026)
+- 12 pipelines operativos, 70 agentes
+- Input sanitizer (13 patrones, 3 capas)
+- Tracing automático en BaseAgent
+- 12 tests E2E con mock LLM
+- Dashboard métricas en GET /api/metrics
+
+### v1.0.0 (Febrero 2026)
+- DEV pipeline completo (6 agentes reales)
+- RESEARCH pipeline (4 agentes, parallel_then_sequential)
+- Infrastructure base (memory, security, audit)
