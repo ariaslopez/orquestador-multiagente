@@ -1,6 +1,6 @@
 # 🤖 CLAW Agent System — Orquestador Multi-Agente
 
-**Versión:** 2.2.0-dev · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
+**Versión:** 2.2.2 · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
 
 Sistema de inteligencia artificial multi-agente diseñado para automatizar trabajo de desarrollo, investigación, contenido, análisis, marketing, producto, diseño y seguridad. Un Maestro central clasifica cada tarea y la delega al pipeline correcto. Los agentes colaboran en secuencia o en paralelo, compartiendo un contexto tipado (`AgentContext`) y accediendo a 13 herramientas MCP externas.
 
@@ -17,13 +17,13 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 │                          MAESTRO (LLM)                               │
 │       Clasifica tarea → keywords + LLM → selecciona pipeline         │
 └───┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬─────────┘
-    │      │      │      │      │      │      │      │      │
+    │      │      │      │      │      │      │      │
   DEV  RESEARCH CONTENT OFFICE  QA    PM  TRADING ANALYTICS ...+4
  6agt   4agt   5agt   3agt   5agt  4agt   4agt   3agt
  seq   par+seq  seq    seq    seq   seq    seq    seq
     │
     └────────────────────────────────────────────────────┐
-                                                         ▼
+                                                         ↓
                     ┌────────────────────────────────────────────┐
                     │            AgentContext tipado              │
                     │  ctx.mcp · ctx.memory · Logs · Audit       │
@@ -45,18 +45,20 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 - `infrastructure/input_sanitizer.py` — Anti prompt-injection (13 patrones, 3 capas).
 - `infrastructure/security_sandbox.py` — Sandbox de filesystem y comandos.
 
-### 🚧 Estado de integración (Fase 12 en progreso)
+### Estado de integración (Fase 12 completada en v2.2.2)
 
 | Componente | Estado | Notas |
 |---|---|---|
-| MCPHub → AgentContext (`ctx.mcp`) | 🟠 En progreso | PR-1: cambio en `context.py` + `maestro.py` |
-| mcp_memory → BaseAgent pre/post run | 🟠 En progreso | PR-1: cambio en `base_agent.py` |
-| Stubs duplicados en `agents/` raíz | 🟠 En progreso | PR-2: 6 archivos a eliminar/fusionar |
-| `core/orchestrator.py` redundante | 🟠 En progreso | PR-2: evaluar y eliminar |
-| `sequential_thinking` en PlannerAgent | 🔴 Pendiente | PR-3: requiere ctx.mcp disponible |
-| WebScoutAgent real | 🔴 Pendiente | PR-3: brave_search + mcp_memory |
-| DataAgent real | 🔴 Pendiente | PR-3: coingecko + supabase_mcp |
-| Smoke tests críticos | 🔴 Pendiente | PR-4: 5 tests + CI básico |
+| MCPHub → AgentContext (`ctx.mcp`) | ✅ Completado | `inject_mcp()` + helpers `is_mcp_available` / `mcp_call` |
+| mcp_memory → BaseAgent pre/post run | ✅ Completado | Hooks `_before_run` / `_after_run` en BaseAgent v2.2.2 |
+| Stubs duplicados en `agents/` raíz | ✅ Completado | Convertidos en tombstones/aliases (PR-2) |
+| `core/orchestrator.py` redundante | ✅ Resuelto | Tombstone hacia Maestro (compatibilidad) |
+| `sequential_thinking` en PlannerAgent | ✅ Completado | PlannerAgent v2 usa MCP como paso 1 |
+| WebScoutAgent real | ✅ Completado | brave_search + fallback DuckDuckGo |
+| DataAgent real | ✅ Completado | coingecko + supabase_mcp (trading) |
+| CoderAgent real (context7 + github_mcp) | 🔴 Pendiente | Fase 13 — esta semana |
+| ReportDistributorAgent real (slack) | 🔴 Pendiente | Fase 13 — esta semana |
+| Smoke tests completos | 🟠 En progreso | `test_mcp_context` + CI listo; 4 smoke tests pendientes |
 
 ---
 
@@ -122,8 +124,8 @@ Fallback 3        : Hyperspace legacy
 ```text
 orquestador-multiagente/
 ├── core/
-│   ├── base_agent.py          # Contrato base — tracing + memoria pre/post run()
-│   ├── context.py             # AgentContext tipado — incluye ctx.mcp (MCPHub)
+│   ├── base_agent.py          # Contrato base — tracing + memoria episódica pre/post run()
+│   ├── context.py             # AgentContext tipado — ctx.mcp (MCPHub) + inject_mcp()
 │   ├── maestro.py             # Orquestador central (12 pipelines)
 │   ├── api_router.py          # Router LLMs: Ollama → Groq → Gemini → Hyperspace
 │   ├── pipeline_router.py     # Ejecutor: sequential / parallel_then_sequential
@@ -131,8 +133,8 @@ orquestador-multiagente/
 │   ├── task_packet.py         # TaskPacket tipado
 │   └── groq_client.py         # Cliente Groq directo
 ├── agents/
-│   ├── dev/                   # planner, coder, reviewer, security, executor, git
-│   ├── research/              # web_scout (🟠 real en PR-3), data, analyst, thesis
+│   ├── dev/                   # planner (v2 + sequential_thinking), coder, reviewer, security, executor, git
+│   ├── research/              # web_scout (v2 + brave_search), data (v2 + coingecko), analyst (v2), thesis (v2)
 │   ├── content/               # topic, writer, editor, brand, scheduler
 │   ├── office/                # file_reader, data_analyzer, report_writer
 │   ├── qa/                    # static_analyzer, bug_hunter, security_reviewer,
@@ -140,8 +142,8 @@ orquestador-multiagente/
 │   ├── pm/                    # requirements_parser, backlog_builder,
 │   │                          #   sprint_planner, roadmap_generator
 │   ├── trading/               # backtest_reader, metrics_calculator,
-│   │                          #   risk_analyzer, strategy_advisor
-│   │                          #   data_agent (🟠 real en PR-3 via coingecko+supabase)
+│   │                          #   risk_analyzer, strategy_advisor,
+│   │                          #   data_agent (v2 + coingecko + supabase_mcp)
 │   ├── analytics/             # data_collector, insight_generator, report_distributor
 │   ├── marketing/             # strategy_agent, copy_agent, growth_agent, analytics_agent
 │   ├── product/               # market_researcher, feedback_synthesizer,
@@ -150,7 +152,7 @@ orquestador-multiagente/
 │   └── design/                # ui_agent, ux_agent, brand_agent, a11y_agent, prompt_engineer
 ├── infrastructure/
 │   ├── memory_manager.py      # SQLite + Supabase
-│   ├── mcp_hub.py             # Proxy universal 13 MCPs — conectado a AgentContext en PR-1
+│   ├── mcp_hub.py             # Proxy universal 13 MCPs — conectado a AgentContext
 │   ├── security_layer.py      # 5 capas de protección
 │   ├── security_sandbox.py    # Sandbox filesystem/comandos
 │   ├── audit_logger.py        # Tracing de agentes + pipeline stats
@@ -169,12 +171,19 @@ orquestador-multiagente/
 │   ├── server.py              # FastAPI + WebSockets + /api/metrics
 │   └── index.html             # Dashboard Tailwind (12 pipelines)
 ├── tests/
+│   ├── smoke/
+│   │   └── test_mcp_context.py    # Smoke test MCPHub + AgentContext (CI activo)
 │   ├── test_pipeline_imports.py   # 52 agentes + 12 pipelines
 │   ├── test_e2e_pipelines.py      # 12 tests E2E con mock LLM
+│   ├── test_integration_dev.py    # Integración pipeline DEV
+│   ├── test_integration_research.py # Integración pipeline RESEARCH
 │   └── test_input_sanitizer.py    # 12 unit tests del sanitizer
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # Smoke tests en cada push/PR
 ├── examples/                  # Scripts listos por pipeline
 ├── config.yaml                # Configuración global y 12 pipelines
-├── main.py                    # Entrada CLI
+├── main.py                    # Entrada CLI (VERSION=2.2.2)
 ├── setup.py                   # Setup inicial + verificación
 ├── requirements.txt
 ├── .env.example
@@ -186,28 +195,20 @@ orquestador-multiagente/
 
 ---
 
-## 🔧 Próximos PRs (plan de construcción activo)
+## ✅ PRs Fase 12–13 completados (v2.2.2)
 
-El sistema tiene toda la infraestructura construida. Los siguientes PRs conectan las piezas existentes sin reescribir nada estructural.
+Todos los PRs de la Fase 12 fueron fusionados en el commit `aa8a4a7` (squash `#1`).
 
-```
-PR-1 (MCPHub + memoria en AgentContext/BaseAgent)  ← CRÍTICO, primer PR
-    ↓ desbloquea
-PR-3 (WebScoutAgent + PlannerAgent + DataAgent reales)
-    ↑ independiente
-PR-2 (limpieza de stubs y redundancias)
-    ↓ todo junto habilita
-PR-4 (smoke tests + CI/CD básico)
-```
+| PR | Título | Estado |
+|---|---|---|
+| **PR-1** | `feat: conectar MCPHub + mcp_memory a AgentContext y BaseAgent` | ✅ Fusionado |
+| **PR-2** | `chore: eliminar stubs duplicados y archivos redundantes` | ✅ Fusionado |
+| **PR-3** | `feat: WebScoutAgent + PlannerAgent + DataAgent v2 con MCPs` | ✅ Fusionado |
+| **PR-4** | `test: smoke test MCPHub + workflow CI básico` | ✅ Fusionado |
 
-| PR | Título | Archivos clave | Prioridad |
-|---|---|---|---|
-| **PR-1** | `feat: conectar MCPHub + mcp_memory a AgentContext y BaseAgent` | `context.py`, `base_agent.py`, `maestro.py` | 🔴 CRÍTICO |
-| **PR-2** | `chore: eliminar stubs duplicados y archivos redundantes` | `agents/*.py` raíz, `core/orchestrator.py` | 🟠 Alta |
-| **PR-3** | `feat: WebScoutAgent + PlannerAgent + DataAgent reales` | `agents/research/web_scout.py`, `agents/dev/planner_agent.py`, `agents/trading/data_agent.py` | 🟠 Alta |
-| **PR-4** | `test: smoke tests críticos + workflow CI básico` | `tests/test_smoke_*.py`, `.github/workflows/` | 🟡 Media |
-
-> Ver `ROADMAP.md` para el detalle completo de cada fase y deuda técnica priorizada.
+**PR pendientes (Fase 13 restante):**
+- `feat: CoderAgent real con context7 + github_mcp`
+- `feat: ReportDistributorAgent real con supabase_mcp + slack`
 
 ---
 
