@@ -1,12 +1,12 @@
 # ROADMAP — CLAW Agent System
 
-## Estado actual: v2.2.2
+## Estado actual: v2.3.0
 
 > Última actualización: Abril 8, 2026
 
 ---
 
-## ✅ Fases completadas (v1.0.0 → v2.2.2)
+## ✅ Fases completadas (v1.0.0 → v2.3.0)
 
 ### Fase 1: DEV Pipeline
 - [x] `agents/dev/planner_agent.py`
@@ -89,32 +89,29 @@
 - [x] `agents/dev/planner_agent.py` → usa `ctx.mcp_call("sequential_thinking", ...)` como paso 1
 - [x] Fallback a subtareas desde plan JSON cuando el MCP no está disponible
 
----
+### ✅ Fase 13: Implementar los 5 agentes core reales — COMPLETADA en v2.3.0
 
-## 🟠 Fase 13: Implementar los 5 agentes core reales — EN PROGRESO (3/5)
-
-> Objetivo: v2.3.0 · Estimado: completar semana del 14 Abril 2026
-> Con estos 5 agentes funcionando, el 80% de las tareas tienen respuesta real.
+> **Completada:** Abril 8, 2026
 
 | # | Agente | Pipeline | MCPs que usa | Estado |
 |---|---|---|---|---|
 | 1 | **WebScoutAgent** | research | brave_search + mcp_memory | ✅ Completado (v2) |
 | 2 | **PlannerAgent** | dev + todos | sequential_thinking + mcp_memory | ✅ Completado (v2) |
 | 3 | **DataAgent** | trading | coingecko + okx + supabase_mcp | ✅ Completado (v2) |
-| 4 | **CoderAgent** | dev | context7 + github_mcp | 🔴 Pendiente |
-| 5 | **ReportDistributorAgent** | analytics | supabase_mcp + slack | 🔴 Pendiente |
+| 4 | **CoderAgent** | dev | context7 + github_mcp | ✅ Completado (v2) |
+| 5 | **ReportDistributorAgent** | analytics | supabase_mcp + slack | ✅ Completado (v2) |
 
 - [x] Implementar `WebScoutAgent` real con brave_search + fallback DuckDuckGo
 - [x] Implementar `PlannerAgent` real con sequential_thinking + memoria episódica
 - [x] Implementar `DataAgent` real con coingecko + supabase_mcp
-- [ ] Implementar `CoderAgent` real con context7 + github_mcp
-- [ ] Implementar `ReportDistributorAgent` real con supabase_mcp + slack
+- [x] Implementar `CoderAgent` real con context7 + github_mcp
+- [x] Implementar `ReportDistributorAgent` real con supabase_mcp + slack
 
 ---
 
 ## 🟠 Fase 14: Blindar el sistema con tests
 
-> Objetivo: v2.4.0 · Estimado: 3–4 días
+> Objetivo: v2.4.0 · Estimado: 3–4 días ← **SIGUIENTE**
 
 ### Smoke tests críticos (1/5 completado)
 - [x] `tests/smoke/test_mcp_context.py` — MCPHub + AgentContext (CI activo)
@@ -214,8 +211,6 @@
 | Smoke tests incompletos | 🔴 Alta | Fase 14 | `test_mcp_context` + CI listos; faltan 4 smoke tests adicionales |
 | Sin rate limiting en MCPs | 🟡 Media | Fase 14 | Brave/CoinGecko con límites de free tier |
 | Dashboard UI — estado sin verificar | 🟡 Media | Fase 15 | Verificar `ui/server.py` + `ui/index.html` antes de marcar completo |
-| CoderAgent usa LLM puro sin context7 | 🟡 Media | Fase 13 | Pendiente último paso de Fase 13 |
-| ReportDistributor sin slack MCP | 🟡 Media | Fase 13 | Pendiente último paso de Fase 13 |
 | GitAgent es stub funcional | 🟡 Media | Fase 17 | `git_ops.py` existe; falta agente real conectado |
 | Sin lint CI | 🟢 Baja | Fase 14 | Solo hay smoke tests; ruff sin workflow |
 | MemoryManager usa keywords SQL | 🟢 Baja | Fase 18 | Upgrade a pgvector pendiente |
@@ -251,9 +246,9 @@ LOCAL_CONTEXT_SIZE=128000
 Abril 2026             Mayo 2026          Junio 2026
 ────────────────────   ───────────────    ──────────────────
 ✅ Fase 12 DONE        Fase 14 + 15       Fases 16 + 17
-🟠 Fase 13 (3/5)   →  Tests + Dashboard  Autonomía + Codebase
-   CoderAgent +        (2 semanas)        (1 mes)
-   ReportDistributor
+✅ Fase 13 DONE    →  Tests + Dashboard  Autonomía + Codebase
+🟠 Fase 14 NEXT        (2 semanas)        (1 mes)
+   Tests + Rate limit
    (esta semana)
 
                                            Q3 2026
