@@ -1,19 +1,20 @@
 # 🤖 CLAW Agent System — Orquestador Multi-Agente
 
-**Versión:** 2.3.0 · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
+**Versión:** 2.4.0 · **Estado:** Producción supervisada · **Pipelines:** 12 activos · **MCPs:** 13 integrados
 
 Sistema de inteligencia artificial multi-agente diseñado para automatizar trabajo de desarrollo, investigación, contenido, análisis, marketing, producto, diseño y seguridad. Un Maestro central clasifica cada tarea y la delega al pipeline correcto. Los agentes colaboran en secuencia o en paralelo, compartiendo un contexto tipado (`AgentContext`) y accediendo a 13 herramientas MCP externas.
 
 > **Roadmap activo:** Ver `ROADMAP.md` para fases completadas, en progreso y próximas.
 > **Mapa de agentes:** Ver `ARCHITECTURE.md` para el diseño completo de 70 agentes → 12 pipelines.
 > **Manual técnico:** Ver `MANUAL.md` para guía completa de desarrollo y contribución.
+> **Integraciones futuras:** Ver `FUTURE_INTEGRATIONS.md` para el blueprint de TweetBot + TradingBot v4-Pro en CLAW.
 
 ---
 
 ## 🧠 Arquitectura de alto nivel
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────┐
 │                          MAESTRO (LLM)                               │
 │       Clasifica tarea → keywords + LLM → selecciona pipeline         │
 └───┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬─────────┘
@@ -22,7 +23,7 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
  6agt   4agt   5agt   3agt   5agt  4agt   4agt   3agt
  seq   par+seq  seq    seq    seq   seq    seq    seq
     │
-    └────────────────────────────────────────────────────┐
+    └───────────────────────────────────────────────────┐
                                                          ↓
                     ┌────────────────────────────────────────────┐
                     │            AgentContext tipado              │
@@ -45,7 +46,7 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 - `infrastructure/input_sanitizer.py` — Anti prompt-injection (13 patrones, 3 capas).
 - `infrastructure/security_sandbox.py` — Sandbox de filesystem y comandos.
 
-### Estado de integración — Fase 12 + 13 (v2.2.2 → v2.3.0)
+### Estado de integración — Fases 12–14 (v2.2.2 → v2.4.0)
 
 | Componente | Estado | Versión |
 |---|---|---|
@@ -58,7 +59,8 @@ Sistema de inteligencia artificial multi-agente diseñado para automatizar traba
 | DataAgent real (coingecko + supabase_mcp) | ✅ Completado | v2.2.2 |
 | CoderAgent real (context7 + github_mcp) | ✅ Completado | v2.3.0 |
 | ReportDistributorAgent real (supabase + slack) | ✅ Completado | v2.3.0 |
-| Smoke tests + CI básico | ⚠️ En progreso | 1/5 activo (Fase 14) |
+| Smoke tests 5/5 + lint CI | ✅ Completado | v2.4.0 |
+| Rate limiting MCPHub (Brave, CoinGecko, OKX) | ✅ Completado | v2.4.0 |
 
 ---
 
@@ -90,6 +92,34 @@ skills/
 - Maestro leerá estas skills como guía de ejecución — los agentes Python no cambian.
 
 > Diseño completo en `ARCHITECTURE.md` · Cómo escribir skills en `MANUAL.md`.
+
+---
+
+## 🔮 Integraciones futuras (Fase 20 — Q4 2026)
+
+CLAW actuará como cerebro central de un ecosistema de tres sistemas especializados.
+Ver el blueprint completo en [`FUTURE_INTEGRATIONS.md`](./FUTURE_INTEGRATIONS.md).
+
+| Sistema | Rol en el ecosistema | Integración con CLAW | Fase |
+|---|---|---|---|
+| **TradingBot v4-Pro** | Motor de ejecución RL (forex + crypto) | MCP `trading_engine` → pipeline TRADING | Fase 20-A/B |
+| **TweetBot Platform** | Generación y publicación de contenido en X | MCP `x_tweetbot` → pipeline CONTENT | Fase 20-C/D |
+| **Dashboard unificado** | Vista única de todos los bots activos | Fase 15 UI + panel bots en Fase 20-E | Fase 15 + 20-E |
+
+```text
+                         CLAW v3.2.0
+                    ┌────────────────────────┐
+                    │     Maestro Orquestador    │
+                    └────────┬─────────┬────────┘
+                             │         │
+             ┌────────────┘         └────────────┐
+             ↓                         ↓
+  ┌────────────────┐   ┌──────────────────┐
+  │  TradingBot v4-Pro │   │  TweetBot Platform │
+  │  Motor RL (forex/  │   │  Generación de     │
+  │  crypto + MT5)     │   │  contenido para X  │
+  └────────────────┘   └──────────────────┘
+```
 
 ---
 
@@ -208,7 +238,12 @@ orquestador-multiagente/
 │   └── index.html             # Dashboard Tailwind (12 pipelines)
 ├── tests/
 │   ├── smoke/
-│   │   └── test_mcp_context.py    # Smoke test MCPHub + AgentContext (CI activo)
+│   │   ├── test_mcp_context.py          # Smoke: MCPHub + AgentContext (CI activo)
+│   │   ├── test_pipeline_classification.py # Smoke: 12 pipelines + edge cases
+│   │   ├── test_loop_controller_retry.py  # Smoke: modos SUPERVISED/AUTONOMOUS/PLAN_ONLY
+│   │   ├── test_mcp_hub_fallback.py       # Smoke: MCP caído / env faltante / timeout
+│   │   ├── test_supabase_persistence.py   # Smoke: sesión se guarda y recupera
+│   │   └── test_api_router_fallback.py    # Smoke: Groq caído → fallback Gemini
 │   ├── test_pipeline_imports.py   # 52 agentes + 12 pipelines
 │   ├── test_e2e_pipelines.py      # 12 tests E2E con mock LLM
 │   ├── test_integration_dev.py    # Integración pipeline DEV
@@ -216,22 +251,24 @@ orquestador-multiagente/
 │   └── test_input_sanitizer.py    # 12 unit tests del sanitizer
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                 # Smoke tests en cada push/PR
+│       ├── ci.yml                 # Smoke tests en cada push/PR
+│       └── lint.yml               # Ruff en cada push/PR (Fase 14)
 ├── examples/                  # Scripts listos por pipeline
 ├── config.yaml                # Configuración global y 12 pipelines
-├── main.py                    # Entrada CLI (VERSION=2.3.0)
+├── main.py                    # Entrada CLI (VERSION=2.4.0)
 ├── setup.py                   # Setup inicial + verificación
 ├── requirements.txt
 ├── .env.example
 ├── README.md                  # Este archivo
 ├── ROADMAP.md                 # Fases completadas y próximas
 ├── ARCHITECTURE.md            # Mapa 70 agentes → 12 pipelines + sistema de skills
-└── MANUAL.md                  # Manual técnico de desarrollo
+├── MANUAL.md                  # Manual técnico de desarrollo
+└── FUTURE_INTEGRATIONS.md     # Blueprint TweetBot + TradingBot v4-Pro en CLAW
 ```
 
 ---
 
-## ✅ PRs Fase 12–13 completados (v2.2.2 → v2.3.0)
+## ✅ PRs Fases 12–14 completados (v2.2.2 → v2.4.0)
 
 | PR | Título | Estado |
 |---|---|---|
@@ -241,11 +278,11 @@ orquestador-multiagente/
 | **PR-4** | `test: smoke test MCPHub + workflow CI básico` | ✅ Fusionado (v2.2.2) |
 | **PR-5** | `feat: CoderAgent real con context7 + github_mcp` | ✅ Fusionado (v2.3.0) |
 | **PR-6** | `feat: ReportDistributorAgent real con supabase_mcp + slack` | ✅ Fusionado (v2.3.0) |
+| **PR-7** | `test: smoke tests completos (5/5) + rate limiting MCPHub` | ✅ Fusionado (v2.4.0) |
+| **PR-8** | `ci: lint workflow con ruff` | ✅ Fusionado (v2.4.0) |
 
-**Próximos (Fase 14):**
-- `test: smoke tests completos (4 tests pendientes)`
-- `feat: rate limiting en MCPHub (Brave + CoinGecko)`
-- `ci: lint workflow con ruff`
+**Próximo (Fase 15):**
+- `feat: Dashboard UI funcional — WebSocket + panel pipelines + panel bots`
 
 ---
 
