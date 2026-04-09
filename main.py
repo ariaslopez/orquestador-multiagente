@@ -15,7 +15,7 @@ load_dotenv()
 from infrastructure.log_config import setup_logging
 setup_logging()
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 
 ALL_PIPELINES = [
     "dev", "research", "content", "office", "qa", "pm", "trading",
