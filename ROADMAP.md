@@ -1,8 +1,8 @@
 # ROADMAP — CLAW Agent System
 
-## Estado actual: v2.3.1
+## Estado actual: v2.4.0
 
-> Última actualización: Abril 8, 2026 — Auditoría de pipelines críticos + propuesta sub-agentes colaboradores
+> Última actualización: Abril 9, 2026 — Fase 14 completa: smoke tests + rate limiting + lint CI
 
 ---
 
@@ -132,29 +132,28 @@
 
 ---
 
-## 🟠 Fase 14: Blindar el sistema con tests
+## ✅ Fase 14: Blindar el sistema con tests — COMPLETADA en v2.4.0
 
-> Objetivo: v2.4.0 · Estimado: 3–4 días ← **SIGUIENTE**
+> **Completada:** Abril 9, 2026
 
-### Smoke tests críticos (1/5 completado)
+### Smoke tests críticos (5/5 completados)
 - [x] `tests/smoke/test_mcp_context.py` — MCPHub + AgentContext (CI activo)
-- [ ] `test_pipeline_classification` — cada tipo de tarea va al pipeline correcto
-- [ ] `test_loop_controller_retry` — fallo de agente activa reintento correcto
-- [ ] `test_mcp_hub_fallback` — MCP caído no rompe el agente
-- [ ] `test_supabase_persistence` — sesión se guarda y recupera correctamente
-- [ ] `test_api_router_fallback` — Groq caído → fallback a Gemini automático
+- [x] `tests/smoke/test_pipeline_classification.py` — 12 pipelines + edge cases
+- [x] `tests/smoke/test_loop_controller_retry.py` — modos SUPERVISED/AUTONOMOUS/PLAN_ONLY
+- [x] `tests/smoke/test_mcp_hub_fallback.py` — MCP caído / env faltante / timeout silencioso
+- [x] `tests/smoke/test_supabase_persistence.py` — sesión se guarda y recupera correctamente
+- [x] `tests/smoke/test_api_router_fallback.py` — Groq caído → fallback a Gemini automático
 
 ### Rate limiting en MCPHub
-- [ ] Brave Search: max 2,000 req/mes en free tier → throttle a 1 req/seg
-- [ ] CoinGecko: max 30 req/min → throttle con token bucket
-- [ ] OKX: throttle alineado con límites de API key
-- [ ] Implementar en `infrastructure/mcp_hub.py` como decorator opcional por MCP
+- [x] Brave Search: throttle a 1 req/seg
+- [x] CoinGecko: throttle con token bucket (30/min)
+- [x] OKX: throttle alineado con límites de API key
 
-### CI/CD básico (parcial)
+### CI/CD básico
 - [x] `.github/workflows/ci.yml` — smoke tests en cada push a main y feat/**
-- [ ] `.github/workflows/lint.yml` — ruff en cada push
+- [x] `.github/workflows/lint.yml` — ruff en cada push
 
-### Verificación de calidad de agentes secundarios (post-14)
+### Verificación de calidad de agentes secundarios (pendiente, post-14)
 > Resultado de auditoría: los pipelines QA, TRADING, ANALYTICS y SECURITY_AUDIT
 > tienen estructura creada pero la calidad de `run()` no ha sido auditada recientemente.
 - [ ] Auditar `agents/qa/` — verificar uso de MCPHub, sanitizer, sandbox, logging
@@ -166,7 +165,7 @@
 
 ## 🟠 Fase 15: Dashboard UI funcional
 
-> Objetivo: v2.5.0 · Estimado: 1 semana
+> Objetivo: v2.5.0 · Estimado: 1 semana ← **SIGUIENTE**
 
 - [ ] Verificar estado actual de `ui/server.py` y `ui/index.html`
 - [ ] Vista de sesiones en tiempo real desde Supabase
@@ -299,15 +298,42 @@ cada pipeline debe usar sus agentes para resolver tipos de tareas recurrentes.
 
 ---
 
+## 🔴 Fase 20: Integración de Servicios Especializados
+
+> Objetivo: v3.2.0 · Ver blueprint completo en [FUTURE_INTEGRATIONS.md](./FUTURE_INTEGRATIONS.md)
+
+### 20-A: API interna de TradingBot
+- [ ] Crear `api/server.py` en `trading-bot-v4-pro` (FastAPI mínimo)
+- [ ] Endpoints: `POST /sessions`, `GET /sessions/{id}/metrics`, `POST /sessions/{id}/start|stop`
+- [ ] Health check: `GET /health`
+
+### 20-B: MCP `trading_engine` en CLAW
+- [ ] `infrastructure/mcps/trading_engine_mcp.py`
+- [ ] Herramientas: `create_session`, `get_session_status`, `get_session_metrics`, `control_session`
+- [ ] Registrar en MCPHub + `.env.example` (`TRADING_ENGINE_URL`)
+
+### 20-C: API interna de TweetBot
+- [ ] Endpoints `/internal/` en `twitter-bot-platform` (pre-requisito: Fases 9-12 TweetBot)
+- [ ] Endpoints: campaigns, generate, queue, approve-all, metrics
+
+### 20-D: MCP `x_tweetbot` en CLAW
+- [ ] `infrastructure/mcps/x_tweetbot_mcp.py`
+- [ ] Herramientas: `create_campaign`, `generate_tweet_batch`, `get_content_queue`, `approve_and_schedule`
+- [ ] Registrar en MCPHub + `.env.example` (`TWEETBOT_URL`)
+
+### 20-E: Dashboard unificado
+- [ ] Panel "Bots de Trading" — instancias, PnL, drawdown, start/stop
+- [ ] Panel "Bots de X" — campañas, tweets publicados, engagement
+- [ ] Cross-intelligence: señal trading → trigger pipeline CONTENT → post en X
+
+---
+
 ## 🐛 Deuda técnica activa
 
 | Ítem | Severidad | Fase objetivo | Notas |
 |---|---|---|---|
-| Smoke tests incompletos | 🔴 Alta | Fase 14 | `test_mcp_context` + CI listos; faltan 4 smoke tests adicionales |
-| Sin rate limiting en MCPs | 🟡 Media | Fase 14 | Brave/CoinGecko/OKX con límites de free tier |
 | Dashboard UI — estado sin verificar | 🟡 Media | Fase 15 | Verificar `ui/server.py` + `ui/index.html` antes de marcar completo |
 | GitAgent es stub funcional | 🟡 Media | Fase 17-B | `git_ops.py` existe; falta agente real conectado |
-| Sin lint CI | 🟢 Baja | Fase 14 | Solo hay smoke tests; ruff sin workflow |
 | Skills system no implementado | 🟡 Media | Fase 17-A | Diseño completo en ROADMAP; pendiente crear archivos `skills/` |
 | MemoryManager usa keywords SQL | 🟢 Baja | Fase 18 | Upgrade a pgvector pendiente |
 | Sin caché de respuestas LLM | 🟢 Baja | Fase 16 | Ahorra tokens en pipelines largos |
@@ -318,6 +344,8 @@ cada pipeline debe usar sus agentes para resolver tipos de tareas recurrentes.
 | Sub-agentes colaboradores no implementados | 🟡 Media | Fase 17-B | Diseñados en auditoría Abril 2026; pendiente implementación |
 | Contratos de datos DataCollector/InsightGenerator sin documentar | 🟢 Baja | Fase 15 | Riesgo de coupling implícito en ANALYTICS |
 | Tests numéricos de TRADING sin cobertura | 🟢 Baja | Fase 17-B | Sharpe, drawdown, win rate sin tests fijos de regresión |
+| TradingBot sin API interna | 🟡 Media | Fase 20-A | Motor RL listo; falta capa de control HTTP |
+| TweetBot en Fase 9 — motor de publicación incompleto | 🟡 Media | Fase 20-C | Bloqueante para integración con CLAW |
 
 ---
 
@@ -346,16 +374,20 @@ LOCAL_CONTEXT_SIZE=128000
 ```
 Abril 2026             Mayo 2026          Junio 2026
 ────────────────────   ───────────────    ──────────────────
-✅ Fase 12 DONE        Fase 14 + 15       Fases 16 + 17-A
-✅ Fase 13 DONE    →  Tests + Dashboard  Autonomía + Skills
-✅ Auditoría v2.3.1    (2 semanas)        (1 mes)
-🟠 Fase 14 NEXT
-   Tests + Rate limit
-   (esta semana)
+✅ Fase 12 DONE         Fase 15            Fases 16 + 17-A
+✅ Fase 13 DONE     →  Dashboard UI  →  Autonomía + Skills
+✅ Auditoría v2.3.1     (1 semana)         (1 mes)
+✅ Fase 14 DONE
+   Tests + Lint CI
+🟠 Fase 15 NEXT
 
                                            Q3 2026
                                            ────────────────────
                                            Fases 17-B + 18 + 19
-                                           Sub-agentes + Codebase + Memoria + Producción
-                                           (GPU requerida)
+                                           Sub-agentes + Memoria + Producción
+
+                                           Q4 2026
+                                           ────────────────────
+                                           Fase 20: TweetBot + TradingBot
+                                           integración completa en CLAW
 ```
