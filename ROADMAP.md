@@ -2,7 +2,7 @@
 
 ## Estado actual: v2.4.0
 
-> Última actualización: Abril 9, 2026 — Fase 14 completa: smoke tests + rate limiting + lint CI
+> Última actualización: Abril 9, 2026 — Fase 15 en progreso: ui/index.html reconstruido (dashboard completo)
 
 ---
 
@@ -77,7 +77,7 @@
 
 #### Paso 3 — Limpiar archivos redundantes
 - [x] `core/orchestrator.py` → tombstone / alias de compatibilidad hacia Maestro
-- [x] `core/pipeline.py` → tombstone / alias de compatibilidad hacia PipelineRouter
+- [x] `core/pipeline.py` → tombstone / alias de compatibilidad hacia Maestro
 - [x] Imports actualizados en archivos que los referencian
 
 #### Paso 4 — Conectar mcp_memory en BaseAgent
@@ -136,7 +136,7 @@
 
 > **Completada:** Abril 9, 2026
 
-### Smoke tests críticos (5/5 completados)
+### Smoke tests críticos (6/6 completados)
 - [x] `tests/smoke/test_mcp_context.py` — MCPHub + AgentContext (CI activo)
 - [x] `tests/smoke/test_pipeline_classification.py` — 12 pipelines + edge cases
 - [x] `tests/smoke/test_loop_controller_retry.py` — modos SUPERVISED/AUTONOMOUS/PLAN_ONLY
@@ -163,16 +163,28 @@
 
 ---
 
-## 🟠 Fase 15: Dashboard UI funcional
+## 🟠 Fase 15: Dashboard UI funcional — EN PROGRESO
 
-> Objetivo: v2.5.0 · Estimado: 1 semana ← **SIGUIENTE**
+> Objetivo: v2.5.0 · Iniciada: Abril 9, 2026 ← **FASE ACTIVA**
 
-- [ ] Verificar estado actual de `ui/server.py` y `ui/index.html`
-- [ ] Vista de sesiones en tiempo real desde Supabase
-- [ ] Gráfica de tokens/costo por pipeline
-- [ ] Log de errores de MCPs en tiempo real
-- [ ] WebSocket para estado de agentes durante ejecución
-- [ ] Panel de MCPs disponibles y su estado de configuración
+### Completado
+- [x] `ui/index.html` reconstruido — dashboard completo v2.4.0 (commit `4e88657`)
+  - Header: logo SVG inline CLAW, badge v2.4.0, health indicator, dark/light toggle
+  - 4 KPI cards con skeleton loader + flash de 300 ms al actualizar
+  - Tabla por pipeline ordenada por calls (polling `/api/metrics` cada 10 s)
+  - Panel de ejecución: textarea + select 12 pipelines, output card con estados visual
+  - Historial de sesiones: tabla 6 cols, max 20 filas, empty state (polling `/api/sessions` cada 10 s)
+  - Bloque Integraciones — Fase 20: Trading Bot v4-Pro + Tweet Bot Platform (placeholder)
+  - Panel "Estado del sistema" desde `/api/stats` (polling cada 30 s)
+  - Banner de error no-bloqueante con auto-dismiss 8 s
+  - Responsive 375 px → 1280 px+, dark mode por defecto, Inter font
+
+### Pendiente
+- [ ] Vista de sesiones en tiempo real desde Supabase (actualmente usa MemoryManager en memoria)
+- [ ] Gráfica de tokens/costo por pipeline (Chart.js CDN)
+- [ ] Log de errores de MCPs en tiempo real (endpoint `/api/mcp-errors` desde AuditLogger)
+- [ ] Panel de MCPs disponibles y su estado de configuración (endpoint `/api/mcp-status`)
+- [ ] WebSocket para estado de agentes durante ejecución (reemplaza polling en panel de tarea)
 - [ ] Métricas específicas por pipeline crítico:
   - DEV: tiempo por fase, archivos tocados, reintentos
   - RESEARCH: fuentes utilizadas, latencia, ratio errores MCP
@@ -332,7 +344,11 @@ cada pipeline debe usar sus agentes para resolver tipos de tareas recurrentes.
 
 | Ítem | Severidad | Fase objetivo | Notas |
 |---|---|---|---|
-| Dashboard UI — estado sin verificar | 🟡 Media | Fase 15 | Verificar `ui/server.py` + `ui/index.html` antes de marcar completo |
+| Dashboard UI — sesiones no persisten en Supabase | 🟡 Media | Fase 15 | Polling usa MemoryManager en memoria; conectar Supabase real |
+| Dashboard UI — sin charts de tokens/costo | 🟡 Media | Fase 15 | Pendiente Chart.js CDN en `ui/index.html` |
+| Dashboard UI — sin panel de estado de MCPs | 🟡 Media | Fase 15 | Requiere endpoint `/api/mcp-status` en `ui/server.py` |
+| Dashboard UI — sin log de errores MCP | 🟡 Media | Fase 15 | Requiere endpoint `/api/mcp-errors` desde AuditLogger |
+| Dashboard UI — polling en ejecución (no WebSocket) | 🟢 Baja | Fase 15 | WebSocket planificado para live agent status |
 | GitAgent es stub funcional | 🟡 Media | Fase 17-B | `git_ops.py` existe; falta agente real conectado |
 | Skills system no implementado | 🟡 Media | Fase 17-A | Diseño completo en ROADMAP; pendiente crear archivos `skills/` |
 | MemoryManager usa keywords SQL | 🟢 Baja | Fase 18 | Upgrade a pgvector pendiente |
@@ -372,22 +388,24 @@ LOCAL_CONTEXT_SIZE=128000
 ## Timeline visual
 
 ```
-Abril 2026             Mayo 2026          Junio 2026
-────────────────────   ───────────────    ──────────────────
-✅ Fase 12 DONE         Fase 15            Fases 16 + 17-A
-✅ Fase 13 DONE     →  Dashboard UI  →  Autonomía + Skills
-✅ Auditoría v2.3.1     (1 semana)         (1 mes)
+Abril 2026                    Mayo 2026          Junio 2026
+──────────────────────────    ───────────────    ──────────────────
+✅ Fase 12 DONE                🟠 Fase 15          Fases 16 + 17-A
+✅ Fase 13 DONE            →  Dashboard UI  →  Autonomía + Skills
+✅ Auditoría v2.3.1             (en curso)         (1 mes)
 ✅ Fase 14 DONE
    Tests + Lint CI
-🟠 Fase 15 NEXT
+🟠 Fase 15 EN PROGRESO
+   · ui/index.html ✅
+   · charts, WS, MCPs status ⏳
 
-                                           Q3 2026
-                                           ────────────────────
-                                           Fases 17-B + 18 + 19
-                                           Sub-agentes + Memoria + Producción
+                                                   Q3 2026
+                                                   ────────────────────
+                                                   Fases 17-B + 18 + 19
+                                                   Sub-agentes + Memoria + Producción
 
-                                           Q4 2026
-                                           ────────────────────
-                                           Fase 20: TweetBot + TradingBot
-                                           integración completa en CLAW
+                                                   Q4 2026
+                                                   ────────────────────
+                                                   Fase 20: TweetBot + TradingBot
+                                                   integración completa en CLAW
 ```
