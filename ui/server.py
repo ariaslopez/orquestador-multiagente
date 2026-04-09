@@ -1,12 +1,15 @@
 """Dashboard web del CLAW Agent System via FastAPI."""
 from __future__ import annotations
 import asyncio
+import os
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 try:
     from pydantic import BaseModel, field_validator
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Header
     from fastapi.responses import HTMLResponse
     import uvicorn
     _DEPS_OK = True
@@ -30,13 +33,72 @@ if _DEPS_OK:
                 return None
             return v
 
+    # ---------------------------------------------------------------------------
+    # Modelos para la integración CLAW → Tweet Bot Platform
+    # ---------------------------------------------------------------------------
+
+    class OrchestratorTweetContent(BaseModel):
+        text: str
+        char_count: int
+        language: str
+        personality_used: str
+
+    class OrchestratorScheduling(BaseModel):
+        publish_at: Optional[str] = None  # ISO 8601 o null
+        timezone: str = "America/Bogota"
+
+    class OrchestratorMeta(BaseModel):
+        pipeline_name: str
+        trace_id: str
+        tokens_used: int = 0
+        model: str = "gpt-4.1-mini"
+
+    class OrchestratorTweetPayload(BaseModel):
+        """
+        TwitterContentPayload generado por marketing-twitter-engager.
+        Ref: agency-agents/integrations/twitter-bot-platform/INTEGRATION.md
+        """
+        status: str  # "ok" | "error"
+        tweet: OrchestratorTweetContent
+        alternatives: list[str] = []
+        thread: list[str] = []
+        scheduling: OrchestratorScheduling = OrchestratorScheduling()
+        meta: OrchestratorMeta
+        error: Optional[str] = None
+
+    class OrchestratorTweetResponse(BaseModel):
+        tweet_id: str
+        status: str   # "queued" | "scheduled" | "published" | "error"
+        publish_at: Optional[str] = None
+        message: str
+
+
+# ---------------------------------------------------------------------------
+# Feature flag — activa la integración con CLAW cuando esté lista
+# Poner CLAW_INTEGRATION_ENABLED=true en .env o en Fly.io secrets para habilitar.
+# ---------------------------------------------------------------------------
+_CLAW_INTEGRATION_ENABLED = os.getenv("CLAW_INTEGRATION_ENABLED", "false").lower() == "true"
+_ORCHESTRATOR_SECRET = os.getenv("ORCHESTRATOR_SECRET", "")
+
+
+def _verify_orchestrator_secret(authorization: str) -> None:
+    """Valida el header Authorization: Bearer <ORCHESTRATOR_SECRET>."""
+    if not _ORCHESTRATOR_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="ORCHESTRATOR_SECRET no configurado en el servidor.",
+        )
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or token != _ORCHESTRATOR_SECRET:
+        raise HTTPException(status_code=401, detail="Token de orquestador inválido.")
+
 
 def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
     if not _DEPS_OK:
         print("Falta fastapi/uvicorn/pydantic: pip install fastapi uvicorn pydantic")
         return
 
-    app = FastAPI(title="CLAW Agent System", version="2.0.0")
+    app = FastAPI(title="CLAW Agent System", version="2.4.0")
 
     @app.get('/', response_class=HTMLResponse)
     async def index():
@@ -47,7 +109,11 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
 
     @app.get('/api/health')
     async def health():
-        return {'status': 'ok', 'version': '2.0.0'}
+        return {
+            'status': 'ok',
+            'version': '2.4.0',
+            'claw_integration': _CLAW_INTEGRATION_ENABLED,
+        }
 
     @app.post('/api/task')
     async def run_task(req: TaskRequest):
@@ -109,7 +175,109 @@ def start_server(host: str = '127.0.0.1', port: int = 8000) -> None:
             },
         }
 
+    # ---------------------------------------------------------------------------
+    # POST /api/orchestrator/tweet
+    # Recibe el TwitterContentPayload del orquestador CLAW y lo encola
+    # en la plataforma de bots para publicación inmediata o programada.
+    #
+    # INACTIVO hasta que CLAW_INTEGRATION_ENABLED=true en variables de entorno.
+    # Ref: agency-agents/integrations/twitter-bot-platform/INTEGRATION.md
+    # ---------------------------------------------------------------------------
+    @app.post(
+        '/api/orchestrator/tweet',
+        response_model=OrchestratorTweetResponse,
+        summary="[CLAW Integration] Recibe contenido generado por marketing-twitter-engager",
+        tags=["orchestrator"],
+        include_in_schema=_CLAW_INTEGRATION_ENABLED,  # oculto en /docs hasta activar
+    )
+    async def orchestrator_tweet(
+        payload: OrchestratorTweetPayload,
+        authorization: str = Header(..., description="Bearer <ORCHESTRATOR_SECRET>"),
+        x_bot_id: Optional[str] = Header(None, alias="X-Bot-Id"),
+    ):
+        # ── Guard: feature flag ─────────────────────────────────────────────────
+        if not _CLAW_INTEGRATION_ENABLED:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Integración CLAW desactivada. "
+                    "Configura CLAW_INTEGRATION_ENABLED=true cuando la integración esté lista."
+                ),
+            )
+
+        # ── Guard: autenticación ────────────────────────────────────────────────
+        _verify_orchestrator_secret(authorization)
+
+        # ── Guard: payload inválido del agente ──────────────────────────────────
+        if payload.status == "error":
+            raise HTTPException(
+                status_code=422,
+                detail=f"El orquestador reportó error en el contenido: {payload.error}",
+            )
+
+        # ── Guard: longitud del tweet ───────────────────────────────────────────
+        if len(payload.tweet.text) > 280:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"El tweet supera 280 caracteres ({len(payload.tweet.text)}). "
+                    "Solicita un rewrite al orquestador."
+                ),
+            )
+
+        # ── Determinar status de publicación ────────────────────────────────────
+        if payload.scheduling.publish_at:
+            pub_status = "scheduled"
+            publish_at = payload.scheduling.publish_at
+        else:
+            pub_status = "queued"
+            publish_at = None
+
+        tweet_id = str(uuid.uuid4())
+        received_at = datetime.now(timezone.utc).isoformat()
+
+        # ── Log de auditoría ─────────────────────────────────────────────────────
+        # TODO (Fase CLAW): persistir en Supabase platform_tweets con los campos:
+        #   tweet_id, bot_id (x_bot_id), text, personality_used, language,
+        #   alternatives, thread_tweets, orchestrator_trace_id, pipeline_name,
+        #   tokens_used, model_used, publish_at, status, received_at
+        try:
+            from infrastructure.audit_logger import AuditLogger
+            AuditLogger().log(
+                event="orchestrator_tweet_received",
+                data={
+                    "tweet_id": tweet_id,
+                    "bot_id": x_bot_id,
+                    "trace_id": payload.meta.trace_id,
+                    "pipeline": payload.meta.pipeline_name,
+                    "personality": payload.tweet.personality_used,
+                    "char_count": payload.tweet.char_count,
+                    "pub_status": pub_status,
+                    "publish_at": publish_at,
+                    "tokens_used": payload.meta.tokens_used,
+                    "model": payload.meta.model,
+                    "received_at": received_at,
+                },
+            )
+        except Exception:
+            # No bloquear la respuesta si el logger falla
+            pass
+
+        return OrchestratorTweetResponse(
+            tweet_id=tweet_id,
+            status=pub_status,
+            publish_at=publish_at,
+            message=(
+                f"Tweet {'programado para ' + publish_at if publish_at else 'encolado para publicación automática'}. "
+                f"trace_id={payload.meta.trace_id}"
+            ),
+        )
+
     print(f"\n🧠 CLAW Dashboard → http://{host}:{port}")
+    if _CLAW_INTEGRATION_ENABLED:
+        print(f"🔗 CLAW Integration ACTIVA → POST /api/orchestrator/tweet")
+    else:
+        print(f"⏸  CLAW Integration INACTIVA (CLAW_INTEGRATION_ENABLED=false)")
     uvicorn.run(app, host=host, port=port, log_level='info')
 
 
@@ -125,7 +293,7 @@ FALLBACK_HTML = """
 <body class="bg-gray-900 text-white min-h-screen p-6">
     <div class="max-w-5xl mx-auto">
         <h1 class="text-3xl font-bold text-cyan-400 mb-1">CLAW Agent System</h1>
-        <p class="text-gray-400 text-sm mb-6">Orquestador autonomo multi-agente v2.0 &mdash; 12 pipelines</p>
+        <p class="text-gray-400 text-sm mb-6">Orquestador autonomo multi-agente v2.4 &mdash; 12 pipelines</p>
         <div class="bg-gray-800 rounded-lg p-4 mb-4">
             <textarea id="task" class="w-full bg-gray-700 text-white rounded p-3 mb-3 h-24 resize-none"
                 placeholder="Describe tu tarea..."></textarea>
